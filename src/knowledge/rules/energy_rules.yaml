@@ -1,0 +1,240 @@
+schema_version: "1.0"
+rules:
+  - id: EKB-COMP-001
+    name: Excessive nested loops
+    description: Deeply nested iteration can multiply work and increase CPU time when data size grows.
+    category: computation
+    severity: high
+    confidence:
+      value: 0.88
+      rationale: Nested iteration is a well-established source of avoidable computational cost.
+    rationale: Algorithms with avoidable quadratic or cubic behavior often consume more processing time and energy than equivalent lower-complexity approaches.
+    detection: Source contains loops nested two or more levels deep over variable-sized collections.
+    recommendation: Review algorithmic complexity; consider hashing, indexing, vectorization, precomputation, or more efficient data structures.
+    references:
+      - title: Green Software Patterns
+        url: https://patterns.greensoftware.foundation/
+        authors: [Green Software Foundation]
+        year: 2024
+    version: "1.0.0"
+    tags: [loops, algorithmic-complexity, cpu]
+    languages: [any]
+
+  - id: EKB-IO-001
+    name: Repeated file I/O inside loops
+    description: Opening, reading, or writing files repeatedly inside loops may cause avoidable disk operations.
+    category: io
+    severity: high
+    confidence:
+      value: 0.86
+      rationale: Batching and reducing I/O calls is a common performance and energy-efficiency practice.
+    rationale: File-system operations are usually slower and more energy-intensive than in-memory operations.
+    detection: Source performs file open/read/write operations inside an iteration construct.
+    recommendation: Move file setup outside loops, batch writes, stream intentionally, or cache reusable data.
+    references:
+      - title: Green Software Patterns
+        url: https://patterns.greensoftware.foundation/
+        authors: [Green Software Foundation]
+        year: 2024
+    version: "1.0.0"
+    tags: [io, loops, batching]
+    languages: [any]
+
+  - id: EKB-NET-001
+    name: Repeated network requests inside loops
+    description: Network calls inside loops can amplify latency, energy use, and upstream service load.
+    category: network
+    severity: high
+    confidence:
+      value: 0.9
+      rationale: Reducing network chatter is a core efficient software design principle.
+    rationale: Each network request may involve CPU, radio or network interface activity, TLS setup, retries, and remote infrastructure work.
+    detection: Source issues HTTP, socket, RPC, or websocket operations inside repeated control flow.
+    recommendation: Batch requests, cache responses, use pagination carefully, or replace polling with event-driven updates.
+    references:
+      - title: Green Software Patterns
+        url: https://patterns.greensoftware.foundation/
+        authors: [Green Software Foundation]
+        year: 2024
+    version: "1.0.0"
+    tags: [network, api, loops, batching]
+    languages: [any]
+
+  - id: EKB-COMP-002
+    name: Redundant computation
+    description: Recomputing deterministic values repeatedly can waste CPU work.
+    category: computation
+    severity: medium
+    confidence:
+      value: 0.78
+      rationale: Memoization and common-subexpression reduction are established optimization techniques.
+    rationale: Avoidable repeated computation increases runtime work without improving correctness.
+    detection: Source repeatedly computes the same deterministic expression or function result.
+    recommendation: Cache deterministic results, precompute invariant values, or reuse intermediate results.
+    references:
+      - title: Energy Efficiency across Programming Languages
+        url: https://greenlab.di.uminho.pt/wp-content/uploads/2017/10/sleFinal.pdf
+        authors: [Rui Pereira, Marco Couto, Francisco Ribeiro, Rui Rua, Jacome Cunha, Joao Paulo Fernandes, Joao Saraiva]
+        year: 2017
+    version: "1.0.0"
+    tags: [cpu, caching, redundant-work]
+    languages: [any]
+
+  - id: EKB-NET-002
+    name: Unnecessary polling
+    description: Fixed-interval polling can perform work even when no state has changed.
+    category: network
+    severity: high
+    confidence:
+      value: 0.84
+      rationale: Polling is a known source of unnecessary network and CPU activity.
+    rationale: Polling loops can keep systems active and trigger repeated network traffic without useful progress.
+    detection: Source repeatedly calls APIs or sleeps between status checks.
+    recommendation: Prefer webhooks, event streams, exponential backoff, server-sent events, or longer adaptive intervals.
+    references:
+      - title: Green Software Patterns
+        url: https://patterns.greensoftware.foundation/
+        authors: [Green Software Foundation]
+        year: 2024
+    version: "1.0.0"
+    tags: [polling, network, scheduling]
+    languages: [any]
+
+  - id: EKB-CFLOW-001
+    name: Busy waiting
+    description: Busy-wait loops keep CPU resources active while waiting for a condition.
+    category: control_flow
+    severity: critical
+    confidence:
+      value: 0.92
+      rationale: Busy waiting is widely recognized as inefficient when blocking or event-based waiting is available.
+    rationale: Spinning on a condition consumes CPU cycles and prevents the runtime from idling efficiently.
+    detection: Source contains loops that repeatedly check a condition without blocking, sleeping, or awaiting.
+    recommendation: Use blocking primitives, events, condition variables, async awaits, or scheduled callbacks.
+    references:
+      - title: Energy Patterns for Mobile Application Development
+        authors: [Gustavo Pinto, Fernando Castor, Yu David Liu]
+        year: 2014
+    version: "1.0.0"
+    tags: [busy-wait, loops, cpu]
+    languages: [any]
+
+  - id: EKB-COMP-003
+    name: Recursion misuse on large inputs
+    description: Recursive algorithms can create excessive call overhead or exponential work when used without care.
+    category: computation
+    severity: medium
+    confidence:
+      value: 0.74
+      rationale: Recursion is appropriate in some algorithms but can be inefficient without memoization or bounded depth.
+    rationale: Recursive implementations may increase stack use and repeated computation compared with iterative or memoized alternatives.
+    detection: Source uses direct or mutual recursion over variable-sized input.
+    recommendation: Check base cases, input bounds, memoization opportunities, and iterative alternatives.
+    references:
+      - title: Energy Efficiency across Programming Languages
+        url: https://greenlab.di.uminho.pt/wp-content/uploads/2017/10/sleFinal.pdf
+        authors: [Rui Pereira, Marco Couto, Francisco Ribeiro, Rui Rua, Jacome Cunha, Joao Paulo Fernandes, Joao Saraiva]
+        year: 2017
+    version: "1.0.0"
+    tags: [recursion, cpu, stack]
+    languages: [any]
+
+  - id: EKB-ASYNC-001
+    name: Blocking operations in async workflows
+    description: Blocking calls inside async code can stall the event loop and reduce concurrency efficiency.
+    category: async
+    severity: high
+    confidence:
+      value: 0.82
+      rationale: Event-loop blocking is a common performance issue in asynchronous systems.
+    rationale: Blocking work inside async paths can increase latency and reduce the benefit of cooperative scheduling.
+    detection: Async functions contain synchronous file, network, sleep, or CPU-heavy operations.
+    recommendation: Use async-compatible libraries, executors for CPU-bound work, and non-blocking wait primitives.
+    references:
+      - title: Python asyncio documentation
+        url: https://docs.python.org/3/library/asyncio.html
+        authors: [Python Software Foundation]
+        year: 2026
+    version: "1.0.0"
+    tags: [async, blocking, concurrency]
+    languages: [python, any]
+
+  - id: EKB-EXC-001
+    name: Exceptions used for frequent control flow
+    description: Raising and catching exceptions repeatedly can add overhead and obscure ordinary control flow.
+    category: exception_handling
+    severity: low
+    confidence:
+      value: 0.68
+      rationale: Exception overhead matters most when exceptions occur frequently in hot paths.
+    rationale: Exceptions are intended for exceptional cases; frequent exception-driven loops may perform unnecessary work.
+    detection: Source raises or catches exceptions inside loops or uses broad exception handlers around hot paths.
+    recommendation: Use explicit condition checks for expected cases and reserve exceptions for unusual failures.
+    references:
+      - title: Python Design FAQ
+        url: https://docs.python.org/3/faq/design.html
+        authors: [Python Software Foundation]
+        year: 2026
+    version: "1.0.0"
+    tags: [exceptions, control-flow, hot-path]
+    languages: [python, any]
+
+  - id: EKB-IO-002
+    name: Synchronous I/O inside loops
+    description: Synchronous I/O inside loops can serialize slow operations and extend active runtime.
+    category: io
+    severity: medium
+    confidence:
+      value: 0.8
+      rationale: Synchronous I/O often dominates runtime when repeated many times.
+    rationale: Repeated blocking I/O prevents overlapping work and may keep compute resources active longer.
+    detection: Source performs blocking file or stream operations inside repeated control flow.
+    recommendation: Batch I/O, use buffering, stream intentionally, or use async I/O where appropriate.
+    references:
+      - title: Green Software Patterns
+        url: https://patterns.greensoftware.foundation/
+        authors: [Green Software Foundation]
+        year: 2024
+    version: "1.0.0"
+    tags: [io, sync, loops, blocking]
+    languages: [any]
+
+  - id: EKB-MEM-001
+    name: Excessive temporary allocation in loops
+    description: Creating large temporary objects inside loops can increase memory pressure and garbage collection work.
+    category: memory
+    severity: medium
+    confidence:
+      value: 0.76
+      rationale: Avoiding unnecessary allocations is a common performance and energy-efficiency practice.
+    rationale: Allocation-heavy code can increase CPU and memory subsystem activity.
+    detection: Source creates large lists, dictionaries, strings, or buffers repeatedly inside loops.
+    recommendation: Reuse buffers where safe, use generators or streaming, and avoid materializing unnecessary intermediates.
+    references:
+      - title: Energy Efficiency across Programming Languages
+        url: https://greenlab.di.uminho.pt/wp-content/uploads/2017/10/sleFinal.pdf
+        authors: [Rui Pereira, Marco Couto, Francisco Ribeiro, Rui Rua, Jacome Cunha, Joao Paulo Fernandes, Joao Saraiva]
+        year: 2017
+    version: "1.0.0"
+    tags: [memory, allocation, loops]
+    languages: [any]
+
+  - id: EKB-CONC-001
+    name: Unbounded concurrent work
+    description: Launching unbounded parallel or async work can increase contention and resource usage.
+    category: concurrency
+    severity: high
+    confidence:
+      value: 0.79
+      rationale: Bounded concurrency is a standard reliability and efficiency practice.
+    rationale: Excessive concurrent tasks can overload CPU, memory, network, or remote services.
+    detection: Source launches tasks, threads, or workers based directly on unbounded input size.
+    recommendation: Add concurrency limits, queues, backpressure, worker pools, or rate limiting.
+    references:
+      - title: Green Software Patterns
+        url: https://patterns.greensoftware.foundation/
+        authors: [Green Software Foundation]
+        year: 2024
+    version: "1.0.0"
+    tags: [concurrency, async, backpressure]
+    languages: [any]
