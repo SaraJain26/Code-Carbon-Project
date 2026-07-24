@@ -4,15 +4,13 @@ from analysis.models import AnalysisResult
 
 from complexity.models import ComplexityMetrics
 
+from complexity.radon_adapter import RadonAdapter
 
 class ComplexityMetricsExtractor:
-    """
-    Extract raw complexity metrics from a static AnalysisResult.
-
-    This component performs no normalization and no scoring.
-    It simply derives measurable structural metrics from the
-    existing static analysis output.
-    """
+    
+    def __init__(self):
+        self._radon = RadonAdapter()
+    
 
     def extract(
         self,
@@ -39,8 +37,12 @@ class ComplexityMetricsExtractor:
             else 0.0
         )
 
+        cyclomatic_complexity = self._radon.compute(
+            analysis_result.module.source_file
+        )
+
         return ComplexityMetrics(
-            cyclomatic_complexity=0.0,
+            cyclomatic_complexity=cyclomatic_complexity,
             max_nesting_depth=max_nesting_depth,
             function_count=function_count,
             class_count=class_count,
