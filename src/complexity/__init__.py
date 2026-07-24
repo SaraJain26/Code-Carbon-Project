@@ -1,18 +1,26 @@
 """
 Complexity Scoring Engine.
 
-This package transforms static analysis metrics and detector
-output into a normalized computational complexity score.
+This package transforms static analysis metrics and detector output
+into a sustainability-oriented Carbon Impact Risk Score.
 """
 
+from .engine import ComplexityEngine
 from .models import (
     ComplexityMetrics,
-    NormalizedComplexityMetrics,
     ComplexityScore,
+    NormalizedComplexityMetrics,
+    RiskLevel,
 )
+from .normalizer import ComplexityNormalizer
+from .scorer import ComplexityScorer
 
 __all__ = [
+    "ComplexityEngine",
     "ComplexityMetrics",
-    "NormalizedComplexityMetrics",
+    "ComplexityNormalizer",
     "ComplexityScore",
+    "ComplexityScorer",
+    "NormalizedComplexityMetrics",
+    "RiskLevel",
 ]

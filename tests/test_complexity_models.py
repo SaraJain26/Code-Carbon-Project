@@ -4,6 +4,7 @@ from complexity.models import (
     ComplexityMetrics,
     ComplexityScore,
     NormalizedComplexityMetrics,
+    RiskLevel,
 )
 
 
@@ -51,13 +52,25 @@ class ComplexityModelsTest(unittest.TestCase):
         )
 
         score = ComplexityScore(
-            raw_score=7.8,
-            normalized_score=0.69,
+            structural_complexity_index=0.54,
+            carbon_impact_risk_score=0.63,
+            risk_level=RiskLevel.HIGH,
+            recommendation="Refactoring recommended to improve sustainability.",
             metrics=normalized,
         )
 
-        self.assertAlmostEqual(score.raw_score, 7.8)
-        self.assertAlmostEqual(score.normalized_score, 0.69)
+        self.assertAlmostEqual(
+            score.structural_complexity_index,
+            0.54,
+        )
+
+        self.assertAlmostEqual(
+            score.carbon_impact_risk_score,
+            0.63,
+        )
+
+        self.assertEqual(score.risk_level, RiskLevel.HIGH)
+
         self.assertEqual(score.metrics, normalized)
 
 
