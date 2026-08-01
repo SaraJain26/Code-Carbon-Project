@@ -6,6 +6,7 @@ from detector.extractors import DefaultCandidateExtractor
 from detector.configuration import DetectorConfiguration
 from detector.context import DetectionContext
 from detector.engine import EnergySmellDetector
+from detector.scorers import DefaultConfidenceScorer
 from detector.interfaces import CandidateExtractor, Detector, FindingGenerator, RuleEvaluator
 from detector.models import Candidate, CandidateEvidence, EnergyFinding, EnergySmellReport, EvidenceKind, ReportStatistics
 
@@ -15,6 +16,7 @@ __all__ = [
     "CandidateExtractor",
     "DefaultCandidateExtractor",
     "DefaultFindingGenerator",
+    "DefaultConfidenceScorer",
     "DefaultRuleEvaluator",
     "DetectionContext",
     "Detector",
