@@ -1,13 +1,39 @@
+# Python files
 __pycache__/
 *.py[cod]
+*$py.class
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
 htmlcov/
+
+# JavaScript/Node/Frontend files
+node_modules/
+dashboard/node_modules/
 dist/
+dashboard/dist/
 build/
-*.egg-info/
+
+# Environment configurations
+.env
+.env.local
+.env.*.local
+
+# IDE and tool metadata
+.vscode/
+.idea/
+.antigravity/
+.gemini/
+*.log
+npm-debug.log*
+
+# Temp directories
+temp_analysis/
+scratch/
+
+# Virtual Environments
 .venv/
 venv/
-.env
+env/
+ENV/

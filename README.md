@@ -1,264 +1,177 @@
-# Code-Carbon Static Analysis Engine
+# Code-Carbon: A Sustainability-First Framework for Carbon-Aware Software Engineering
 
-Code-Carbon is a publication-oriented research framework for **predictive carbon-aware software engineering**. The framework performs static analysis of Python source code and incrementally builds the foundation required for energy smell detection, software complexity assessment, and future predictive carbon estimation.
-
-The project is being developed in modular stages. The current implementation includes the static analysis engine, energy knowledge base, detector framework, and complexity analysis module.
+Code-Carbon is a modular, publication-oriented research framework designed to analyze Python source code, detect energy inefficiencies (energy smells), and estimate runtime carbon footprints early in the software development life cycle (SDLC).
 
 ---
 
-# Current Capabilities
+## 1. System Features
 
-## Static Analysis Engine
-
-- Python AST parsing using the standard `ast` module.
-- Function, async function, parameter, decorator, annotation, docstring, and local-variable extraction.
-- Class, inheritance, method, decorator, and class-variable extraction.
-- Loop detection with nesting depth and structural flags.
-- Call extraction with builtin, library, user-defined, method, and unknown classification.
-- Import extraction classified as standard library, third-party, or local.
-- File operation detection for `open`, stream methods, `pathlib`, and common `os` operations.
-- Network/API detection for `requests`, `urllib`, `httpx`, `aiohttp`, `socket`, `websocket`, `grpc`, and generic HTTP method calls.
-- Async analysis for async functions, `await`, `async for`, and `async with`.
-- Exception analysis for `try`, `except`, `finally`, `raise`, and custom exceptions.
-- Scope-aware symbol table.
-- Directed call graph with direct and mutual recursion helpers.
-- Lightweight Control Flow Graph (CFG).
-- AST metadata registry containing source location, parent, scope, depth, and node type.
+*   **Static AST Analysis**: Comprehensive parsing of function calls, loops, complexity indices, file/network operations, and recursion behaviors without executing the source file.
+*   **Energy Knowledge Base (EKB)**: Declares 12 distinct energy smell detection rules backed by research.
+*   **Radon Complexity Metrics**: Calculates Cyclomatic Complexity, Maximum Nesting Depth, and Function Density to derive a Structural Complexity Index (SCI).
+*   **RAPL Hardware Profiling & Estimation**: Models runtime energy footprint in Joules using standard references and normalized hardware profiles.
+*   **Carbon Intensity Provider Abstraction**:
+    *   **Live Provider**: Integrates the Electricity Maps API to retrieve marginal carbon grid intensities (gCO₂eq/kWh) for specified regional zones.
+    *   **Mock Provider Fallback**: Diurnal sine-simulated grid forecast and zone database supporting completely offline or fallback execution when no API key is present.
+*   **Carbon-Aware Recommendation Engine**: Maps AST smell detections to optimization recommendations, prioritizing fixes based on carbon impact.
+*   **FastAPI backend**: Unified OpenAPI endpoint server (`/analyze`, `/zones`, `/search-zones`, `/health`).
+*   **React Dashboard**: Dark-themed user visualizer with chart widgets showing regional grid intensity comparisons and smell breakdowns.
 
 ---
 
-## Energy Knowledge Base
+## 2. Architecture Diagram
 
-The Energy Knowledge Base (EKB) stores detector-independent energy smell definitions as YAML-backed typed rules.
-
-Features include:
-
-- YAML rule loading
-- Rule validation
-- Duplicate detection
-- Typed rule models
-- Repository querying
-- Extensible rule architecture
-
----
-
-## Detector Framework
-
-The detector framework provides a modular architecture for identifying energy-related software patterns.
-
-Implemented components include:
-
-- Detector registry
-- Detector engine
-- Detector context
-- Rule evaluator
-- Confidence scorer
-- Finding generator
-- Detector filtering
-
-Current detectors include:
-
-- Nested Loop Detector
-- Recursive Computation Detector
-- File Operation Detector
-- Network Call Detector
-- Async Operation Detector
-
----
-
-## Complexity Analysis Module
-
-The Complexity Analysis module measures structural software complexity and transforms raw metrics into normalized sustainability-oriented scores.
-
-Implemented features:
-
-- Cyclomatic Complexity extraction using **Radon**
-- Maximum nesting depth
-- Function density
-- Energy smell integration
-- Complexity normalization
-- Structural Complexity Index (SCI)
-- Carbon Impact Risk Score (CIRS)
-- Risk classification
-- Recommendation generation
-- Complexity scoring engine
-
----
-
-# Mathematical Model
-
-The framework currently computes two composite metrics.
-
-## Structural Complexity Index (SCI)
-
-```
-SCI =
-0.50 × Cyclomatic Complexity
-+ 0.30 × Maximum Nesting Depth
-+ 0.20 × Function Density
+```mermaid
+graph TD
+    A[Python Source File] --> B[Static Analysis Engine]
+    B --> C[Radon Complexity Extractor]
+    B --> D[Energy Smell Detector]
+    
+    C --> E[Structural Complexity Index SCI]
+    D --> F[Fuzzy Energy Smell Score ESS]
+    
+    E --> G[Predictive Pipeline Orchestrator]
+    F --> G
+    
+    H[get_carbon_provider] -->|ELECTRICITYMAPS_API_KEY| I[ElectricityMapsProvider]
+    H -->|No Key/Fallback| J[MockCarbonIntensityProvider]
+    
+    I --> G
+    J --> G
+    
+    G --> K[Carbon Impact Risk Score CIRS]
+    G --> L[Recommendation Prioritizer]
+    
+    L --> M[FastAPI JSON Endpoint / CLI Output]
+    M --> N[React HSL Glassmorphism Dashboard]
 ```
 
 ---
 
-## Carbon Impact Risk Score (CIRS)
+## 3. Project Structure
 
 ```
-CIRS =
-0.55 × SCI
-+ 0.45 × Energy Smell Score
-```
-
----
-
-## Risk Levels
-
-| Score | Risk |
-|--------|------|
-| 0.00 – 0.20 | Very Low |
-| 0.21 – 0.40 | Low |
-| 0.41 – 0.60 | Moderate |
-| 0.61 – 0.80 | High |
-| 0.81 – 1.00 | Very High |
-
----
-
-# Project Architecture
-
-```
-src/
-
-├── analysis/
-│   ├── parser/
-│   ├── visitors/
-│   ├── cfg/
-│   ├── callgraph/
-│   ├── metadata/
-│   ├── models/
-│   ├── symbols/
-│   └── utils/
+Code-Carbon-Project/
+├── dashboard/               # React + TypeScript Vite visualizer dashboard
+│   ├── src/
+│   │   ├── App.tsx          # Main panel, dropzones, Recharts widgets
+│   │   └── index.css        # Custom HSL glassmorphism dark-mode styles
+│   └── package.json
 │
-├── knowledge/
-│   ├── rules/
-│   ├── loader.py
-│   ├── repository.py
-│   ├── validation.py
-│   └── models.py
+├── docs/
+│   └── api.md               # Detailed developer API documentation
 │
-├── detector/
-│   ├── evaluators/
-│   ├── extractors/
-│   ├── generators/
-│   ├── rules/
-│   ├── scorers/
-│   ├── configuration.py
-│   ├── context.py
-│   ├── engine.py
-│   ├── interfaces.py
-│   └── models.py
+├── src/
+│   ├── analysis/            # AST parsing visitors (loops, recursion, I/O)
+│   ├── knowledge/           # YAML energy smell rule definitions
+│   ├── detector/            # Smell engine (registries, confidence scoring)
+│   ├── complexity/          # Structural complexity (Radon adaptations)
+│   ├── hardware_profile/    # Normalized hardware database
+│   ├── energy/              # RAPL runtimes & estimates
+│   ├── carbon/              # Live API clients, provider factory, models
+│   │   ├── api.py           # Electricity Maps v4 client
+│   │   ├── providers.py     # CarbonIntensityProvider interface & implementations
+│   │   └── engine.py        # Emission estimator
+│   │
+│   ├── sustainability/      # Fuzzy ESS and CIRS math engines
+│   │   └── metrics.py
+│   │
+│   ├── recommendation/      # Carbon-aware recommendation pipeline
+│   │   ├── engine.py        # Recommendations generator
+│   │   └── prioritizer.py   # Multiplicative exposure risk ranking
+│   │
+│   └── api/                 # FastAPI router routes & schemas
+│       ├── main.py
+│       └── models.py
 │
-└── complexity/
-    ├── metrics.py
-    ├── radon_adapter.py
-    ├── normalizer.py
-    ├── scorer.py
-    ├── engine.py
-    └── models.py
+├── tests/                   # 92 unit and mathematical tests
+└── .env                     # Local environment keys (e.g. ELECTRICITYMAPS_API_KEY)
 ```
 
 ---
 
-# Quick Start
+## 4. Installation
 
-Install the project in editable mode.
-
+### Python Backend
+Ensure Python 3.10+ is installed. Clone the repository and run:
 ```powershell
+# Install project dependencies in editable mode
 pip install -e .
 ```
 
-Run the complete test suite.
-
+### React Frontend
+Ensure Node.js 18+ is installed:
 ```powershell
+cd dashboard
+npm install
+```
+
+---
+
+## 5. Usage & Examples
+
+### Configure Environment
+Create a `.env` file in the root directory to activate the live Electricity Maps API:
+```ini
+ELECTRICITYMAPS_API_KEY=your_electricitymaps_api_token
+```
+*Note: If no API key is specified, the system automatically runs using MockCarbonIntensityProvider.*
+
+### CLI Operations
+The CLI provides immediate estimation reports. Set python encoding for the subscript symbols on Windows:
+```powershell
+# Set environment
+$env:PYTHONPATH="src"
+$env:PYTHONIOENCODING="utf-8"
+
+# 1. Run predictive carbon estimation on a file
+python -m carbon.cli estimate examples/benchmarks/nested_loops.py --zone DK-DK1
+
+# 2. Force Global Fallback average on network failures
+python -m carbon.cli estimate examples/benchmarks/nested_loops.py --zone DK-DK1 --global-average
+
+# 3. List supported regional grid codes
+python -m carbon.cli zones
+
+# 4. Search zones
+python -m carbon.cli search-zones --query Denmark
+```
+
+### FastAPI Server Launch
+Run the FastAPI application server:
+```powershell
+$env:PYTHONPATH="src"
+uvicorn api.main:app --host 127.0.0.1 --port 8000 --reload
+```
+Interactive OpenAPI documentation will be exposed at `http://127.0.0.1:8000/docs`.
+
+### Launch Dashboard Frontend
+```powershell
+cd dashboard
+npm run dev
+```
+Open `http://localhost:5173` to upload files, configure grids, and visualize estimations.
+
+---
+
+## 6. Testing Instructions
+
+To run the complete 92-test suite covering AST visitors, EKB rules, Radon adaptions, API client responses, provider switching, and mathematical validation curves:
+```powershell
+$env:PYTHONPATH="src"
 python -m unittest discover -s tests -v
 ```
 
----
-
-# Example
-
-```python
-from analysis import StaticAnalysisEngine
-
-engine = StaticAnalysisEngine()
-
-result = engine.analyze_file(
-    "examples/benchmarks/classes_exceptions.py"
-)
-
-print(result.functions)
-print(result.call_graph.recursive_functions())
+To run a sensitivity and ablation evaluation matching academic review validation parameters, execute:
+```powershell
+python "scratch/generate_validation_report.py"
 ```
+This produces `validation_tables.md` in your outputs containing sensitivity grids for fuzzy joint possibilities.
 
 ---
 
-# Testing
+## 7. Future Work
 
-The project currently contains comprehensive unit and integration tests covering:
-
-- Static Analysis Engine
-- Energy Knowledge Base
-- Detector Framework
-- Complexity Metrics
-- Complexity Normalization
-- Complexity Scoring
-- Complexity Engine
-- Radon Integration
-
-Current status:
-
-```
-43 tests
-43 passed
-0 failures
-```
-
----
-
-# Documentation
-
-API documentation:
-
-```
-docs/api.md
-```
-
-Knowledge base documentation:
-
-```
-docs/knowledge
-```
-
----
-
-# Current Development Status
-
-Completed modules:
-
-- ✅ Static Analysis Engine
-- ✅ Energy Knowledge Base
-- ✅ Detector Framework
-- ✅ Complexity Analysis Module
-
-Upcoming modules:
-
-- Predictive Carbon Estimation
-- Carbon-Aware Recommendation Engine
-- Machine Learning Prediction Models
-- Carbon Scheduling Framework
-- Explainability & Reporting
-- Research Evaluation Pipeline
-
----
-
-# Research Objective
-
-Code-Carbon aims to provide a modular framework for predictive carbon-aware software engineering by combining static program analysis, software complexity metrics, energy smell detection, and sustainability-oriented scoring. The long-term goal is to enable developers to estimate potential software energy impact early in the software development lifecycle, before deployment or execution.
+*   **Machine Learning Calibration**: Incorporate empirical RAPL prediction models trained across differing container workloads to replace static complexity estimations.
+*   **Dynamic Validation**: Integrate real-time runtime profiles (e.g. standard profilers or Prometheus carbon metrics) alongside static analyses.
+*   **IDE Extension Ecosystem**: Package Code-Carbon into VSCode and JetBrains extensions to flag code smells directly in code editors.
