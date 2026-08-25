@@ -18,8 +18,8 @@ from carbon import get_carbon_provider
 from pipeline import PredictivePipeline
 from recommendation.engine import RecommendationEngine
 from sustainability.metrics import ResearchSustainabilityMetrics
-from api.utils import serialize_value
-from api.models import HealthResponse, AnalyzeResponse
+from .utils import serialize_value
+from .models import HealthResponse, AnalyzeResponse
 
 app = FastAPI(
     title="Code-Carbon API",
