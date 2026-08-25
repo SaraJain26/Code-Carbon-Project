@@ -26,4 +26,4 @@ knowledge = ["rules/*.yaml"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
-testpaths = ["tests"]
+testpaths = ["tests"]
