@@ -12,7 +12,12 @@ authors = [{ name = "Code-Carbon Research Team" }]
 dependencies = [
     "PyYAML>=6.0",
     "radon>=6.0",
-    "psutil>=7.2"
+    "psutil>=7.2",
+    "requests",
+    "python-dotenv",
+    "fastapi",
+    "uvicorn",
+    "python-multipart"
 ]
 
 [project.optional-dependencies]

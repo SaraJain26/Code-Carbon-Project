@@ -1,0 +1,9 @@
+PyYAML>=6.0
+radon>=6.0
+psutil>=7.2
+pytest>=9.1
+requests
+python-dotenv
+fastapi
+uvicorn
+python-multipart
