@@ -18,6 +18,12 @@ from .models import (
     CarbonResult,
     ZoneData,
 )
+from .providers import (
+    CarbonIntensityProvider,
+    ElectricityMapsProvider,
+    MockCarbonIntensityProvider,
+    get_carbon_provider,
+)
 
 __all__ = [
     "APIRequestError",
@@ -32,4 +38,8 @@ __all__ = [
     "EnergyUnitConverter",
     "CarbonEstimator",
     "CarbonEstimationEngine",
+    "CarbonIntensityProvider",
+    "ElectricityMapsProvider",
+    "MockCarbonIntensityProvider",
+    "get_carbon_provider",
 ]

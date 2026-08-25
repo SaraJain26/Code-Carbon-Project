@@ -13,9 +13,9 @@ from energy.models import EnergyResult
 from .api import (
     APIRequestError,
     AuthenticationError,
-    ElectricityMapsClient,
     InvalidZoneError,
 )
+from .providers import CarbonIntensityProvider
 from .config import (
     DEFAULT_GLOBAL_CARBON_INTENSITY,
     DEFAULT_GLOBAL_CARBON_INTENSITY_SOURCE,
@@ -36,7 +36,7 @@ class CarbonEstimationEngine:
 
     def __init__(
         self,
-        client: ElectricityMapsClient,
+        client: CarbonIntensityProvider,
     ) -> None:
 
         self._client = client
@@ -67,7 +67,14 @@ class CarbonEstimationEngine:
             AuthenticationError,
             InvalidZoneError,
             APIRequestError,
-        ):
+            Exception,
+        ) as exc:
+
+            import logging
+            logging.getLogger(__name__).warning(
+                "Electricity Maps API call failed: %s. Using fallback intensity.",
+                str(exc)
+            )
 
             if not use_global_average:
                 raise

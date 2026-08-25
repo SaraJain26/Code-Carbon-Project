@@ -154,8 +154,11 @@ class ElectricityMapsClient:
                 "displayName",
                 payload["zoneName"],
             ),
-            country_name=payload["countryName"],
-            country_code=payload["countryCode"],
+            country_name=payload.get(
+                "countryName",
+                payload.get("zoneName", ""),
+            ),
+            country_code=payload.get("countryCode", ""),
             parent_zone=payload.get(
                 "zoneParentKey",
             ),

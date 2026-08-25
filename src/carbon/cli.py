@@ -14,9 +14,9 @@ from pipeline import PredictivePipeline
 from .api import (
     APIRequestError,
     AuthenticationError,
-    ElectricityMapsClient,
     InvalidZoneError,
 )
+from .providers import get_carbon_provider
 from .models import CarbonResult
 
 
@@ -186,6 +186,28 @@ def command_estimate(
             f"{carbon_result.fallback_used}"
         )
 
+        from sustainability.metrics import ResearchSustainabilityMetrics
+        smell_report = result["energy_smell_report"]
+        complexity_score = result["complexity_score"]
+        
+        ess = ResearchSustainabilityMetrics.compute_energy_smell_score(smell_report)
+        cirs_research = ResearchSustainabilityMetrics.compute_carbon_impact_risk_score(
+            complexity=complexity_score,
+            energy_result=energy_result,
+            carbon_result=carbon_result,
+            ess=ess
+        )
+
+        print(
+            f"Research Smell (ESS)  : "
+            f"{ess:.2f}/10"
+        )
+
+        print(
+            f"Research CIRS         : "
+            f"{cirs_research:.6f} e-gCO₂eq"
+        )
+
         print()
 
         return 0
@@ -300,7 +322,7 @@ def command_zones() -> int:
 
     try:
 
-        client = ElectricityMapsClient()
+        client = get_carbon_provider()
 
         zones = client.get_all_zones()
 
@@ -344,7 +366,7 @@ def command_search_zones(
 
     try:
 
-        client = ElectricityMapsClient()
+        client = get_carbon_provider()
 
         matches = client.search_zones(
             args.query,

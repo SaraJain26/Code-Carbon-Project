@@ -32,7 +32,7 @@ from energy.models import EnergyResult
 
 from carbon import (
     CarbonEstimationEngine,
-    ElectricityMapsClient,
+    get_carbon_provider,
 )
 
 from knowledge import (
@@ -68,7 +68,7 @@ class PredictivePipeline:
 
         self._carbon_engine = (
             CarbonEstimationEngine(
-                ElectricityMapsClient(),
+                get_carbon_provider(),
             )
         )
 
