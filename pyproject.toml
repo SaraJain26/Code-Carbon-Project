@@ -27,3 +27,6 @@ knowledge = ["rules/*.yaml"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.vercel]
+entrypoint = "src/api/main.py"
