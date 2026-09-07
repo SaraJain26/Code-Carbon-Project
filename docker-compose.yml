@@ -1,0 +1,26 @@
+# Docker Compose file for running the containerized production build of Code-Carbon.
+# NOTE: This configuration is intended for production-like testing, staging, and hosting.
+# For active local code iteration, use the standard local development setup:
+#   - Backend: run 'uvicorn api.main:app --reload' in your local python virtual environment.
+#   - Frontend: run 'npm run dev' inside the 'dashboard' folder for Vite HMR (hot module reloading).
+
+version: "3.8"
+
+services:
+  code-carbon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: code-carbon-app
+    ports:
+      - "8000:8000"
+    environment:
+      # Inject the API key from host environment or local .env file.
+      # If not provided, the application automatically falls back to MockCarbonIntensityProvider.
+      - ELECTRICITYMAPS_API_KEY=${ELECTRICITYMAPS_API_KEY:-}
+      # Production Uvicorn environment configurations
+      - PORT=8000
+    restart: unless-stopped
+    # Optional: read environment variables directly from a local .env file on the host machine
+    env_file:
+      - .env

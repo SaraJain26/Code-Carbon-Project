@@ -28,9 +28,13 @@ build/
 *.log
 npm-debug.log*
 
-# Temp directories
+# Temp directories and test artifacts
 temp_analysis/
 scratch/
+temp_*
+data.txt
+log.txt
+records.txt
 
 # Virtual Environments
 .venv/

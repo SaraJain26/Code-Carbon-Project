@@ -10,7 +10,7 @@ from knowledge import RuleConfidence
 
 class RecursiveComputationDetector:
 
-    RULE_ID = "EKB-COMP-002"
+    RULE_ID = "EKB-COMP-003"
 
     def detect(
         self,

@@ -22,12 +22,24 @@ class FileOperationDetector:
         candidates: list[Candidate] = []
 
         for operation in result.file_operations:
+            is_inside_loop = any(
+                loop.line_number <= operation.line_number <= loop.end_line
+                for loop in result.loops
+            )
+
+            # EKB-IO-001 targets repeated file handle initialization / open calls inside loops
+            op_name = getattr(operation, "operation", str(operation))
+            if not (op_name == "open" or op_name.endswith(".open") or "open" in op_name or "read_text" in op_name or "write_text" in op_name):
+                continue
+
+            conf_val = 0.90 if is_inside_loop else 0.15
+            msg = "Repeated file I/O operation inside loop." if is_inside_loop else "File I/O operation detected."
 
             candidates.append(
                 Candidate.create(
                     rule_id=self.RULE_ID,
-                    confidence=RuleConfidence(0.90),
-                    message="File I/O operation detected.",
+                    confidence=RuleConfidence(conf_val),
+                    message=msg,
                     evidence=[
                         CandidateEvidence(
                             kind=EvidenceKind.FILE_OPERATION,

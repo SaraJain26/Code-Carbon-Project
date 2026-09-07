@@ -14,13 +14,14 @@ from analysis.models import CallType
 from analysis.parser.ast_models import call_name
 
 FILE_METHODS: frozenset[str] = frozenset(
-    {"open", "read", "write", "append", "seek", "close", "read_text", "write_text", "read_bytes", "write_bytes"}
+    {"open", "read", "readline", "readlines", "write", "writelines", "seek", "tell", "close", "flush", "read_text", "write_text", "read_bytes", "write_bytes"}
 )
 OS_FILE_OPERATIONS: frozenset[str] = frozenset(
-    {"os.remove", "os.rename", "os.replace", "os.mkdir", "os.makedirs", "os.rmdir", "os.path.exists"}
+    {"os.remove", "os.rename", "os.replace", "os.mkdir", "os.makedirs", "os.rmdir", "os.path.exists", "os.stat"}
 )
-NETWORK_ROOTS: frozenset[str] = frozenset({"requests", "urllib", "httpx", "aiohttp", "socket", "websocket", "grpc"})
-HTTP_METHODS: frozenset[str] = frozenset({"get", "post", "put", "patch", "delete", "head", "options", "request"})
+NETWORK_ROOTS: frozenset[str] = frozenset({"requests", "urllib", "httpx", "aiohttp", "socket", "websocket", "grpc", "session", "client", "http", "api"})
+HTTP_METHODS: frozenset[str] = frozenset({"get", "post", "put", "patch", "delete", "head", "options", "request", "urlopen"})
+NON_FILE_ROOTS: frozenset[str] = frozenset({"output", "bucket", "res", "result", "results", "arr", "items", "data", "list", "values", "buf", "buffer", "self"})
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,10 @@ class CallClassifier:
         return CallType.UNKNOWN
 
     def is_file_operation(self, inspection: CallInspection) -> bool:
+        if inspection.leaf_name not in FILE_METHODS and inspection.full_name not in OS_FILE_OPERATIONS and not inspection.full_name.startswith("pathlib."):
+            return False
+        if inspection.root_name in NON_FILE_ROOTS and inspection.leaf_name not in {"open", "read_text", "write_text"}:
+            return False
         return (
             inspection.leaf_name in FILE_METHODS
             or inspection.full_name.startswith("pathlib.")
@@ -64,7 +69,13 @@ class CallClassifier:
         )
 
     def is_network_operation(self, inspection: CallInspection) -> bool:
-        return inspection.root_name in NETWORK_ROOTS or inspection.leaf_name in HTTP_METHODS
+        if inspection.root_name in NETWORK_ROOTS:
+            return True
+        if inspection.full_name.startswith(("requests.", "urllib.", "httpx.", "aiohttp.", "socket.", "websocket.", "grpc.")):
+            return True
+        if inspection.root_name in {"session", "client", "http", "api", "req", "conn"} and inspection.leaf_name in HTTP_METHODS:
+            return True
+        return False
 
     def network_library(self, inspection: CallInspection) -> str | None:
         return inspection.root_name if inspection.root_name in NETWORK_ROOTS else None

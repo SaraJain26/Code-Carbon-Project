@@ -1,0 +1,45 @@
+# Ignored Files & Folders for Docker Build
+
+# Local secret files
+.env
+.env*
+*.local
+
+# Node dependencies and builds
+node_modules/
+dashboard/node_modules/
+dashboard/dist/
+
+# Python dependencies and environments
+venv/
+.venv/
+env/
+.env/
+build/
+dist/
+*.egg-info/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary analysis and logs
+temp_analysis/
+*.log
+
+# Git and IDE configurations
+.git/
+.gitignore
+.gitattributes
+.vscode/
+.idea/
+.oxlintrc.json
+tsconfig.json
+tsconfig.app.json
+tsconfig.node.json
+pyproject.toml
+requirements.txt
+README.md
+docs/
+research/
+benchmarks/
+sample.py

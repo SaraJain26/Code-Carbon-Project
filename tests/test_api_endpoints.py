@@ -68,10 +68,18 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertIn("carbon_impact_risk_score", metrics)
         self.assertEqual(metrics["ess_version"], "1.0.0-prototype")
 
-        # Check recommendations are present
+        # Check recommendations and optimized_file_url are present
         recs = payload["recommendations"]["recommendations"]
         self.assertGreater(len(recs), 0)
         self.assertEqual(recs[0]["rule_id"], "EKB-COMP-001")  # Nested loops should trigger recommendation
+        self.assertIn("optimized_file_url", payload)
+        self.assertTrue(payload["optimized_file_url"].startswith("/download-optimized/"))
+
+        # Test download endpoint with generated optimized file
+        opt_url = payload["optimized_file_url"]
+        download_res = self.client.get(opt_url)
+        self.assertEqual(download_res.status_code, 200)
+        self.assertIn("def sample_function", download_res.text)
 
     def test_analyze_endpoint_invalid_file(self):
         files = {
@@ -80,6 +88,11 @@ class TestAPIEndpoints(unittest.TestCase):
         response = self.client.post("/analyze", files=files)
         self.assertEqual(response.status_code, 400)
         self.assertIn("Only Python (.py) source files are supported", response.json()["detail"])
+
+    def test_download_optimized_not_found(self):
+        response = self.client.get("/download-optimized/non_existent_file.py")
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["detail"], "Optimized file not found.")
 
 
 if __name__ == "__main__":

@@ -19,6 +19,21 @@ from analysis.visitors.metadata_visitor import MetadataVisitor
 from analysis.visitors.symbol_visitor import SymbolVisitor
 
 
+def _count_code_lines(source: str) -> int:
+    """
+    Count physical source lines of code excluding blank lines and single-line comments.
+    This ensures line count and Function Density remain invariant to comment stripping
+    during AST transformations.
+    """
+    lines = source.splitlines()
+    code_lines = 0
+    for line in lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            code_lines += 1
+    return max(code_lines, 1)
+
+
 class StaticAnalysisEngine:
     """Coordinates focused static analysis passes over Python source code."""
 
@@ -34,7 +49,8 @@ class StaticAnalysisEngine:
             source_file=path,
             name=path.stem,
             docstring=ast.get_docstring(tree),
-            line_count=len(source.splitlines()),
+            line_count=_count_code_lines(source) if source.strip() else 0,
+            tree=tree,
         )
 
         function_visitor = FunctionVisitor()

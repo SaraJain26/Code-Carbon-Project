@@ -7,6 +7,8 @@ from .file_operations import FileOperationDetector
 from .nested_loops import NestedLoopDetector
 from .network_calls import NetworkCallDetector
 from .recursive_computation import RecursiveComputationDetector
+from .redundant_computation import RedundantComputationDetector
+from .memory_allocation import MemoryAllocationDetector
 
 
 class DetectorRegistry:
@@ -24,6 +26,8 @@ class DetectorRegistry:
         self._detectors = [
             NestedLoopDetector(),
             RecursiveComputationDetector(),
+            RedundantComputationDetector(),
+            MemoryAllocationDetector(),
             NetworkCallDetector(),
             FileOperationDetector(),
             AsyncOperationDetector(),

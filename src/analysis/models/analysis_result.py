@@ -58,6 +58,7 @@ class ModuleInfo:
     name: str
     docstring: str | None
     line_count: int
+    tree: Any | None = None
 
 
 @dataclass

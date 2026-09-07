@@ -35,6 +35,7 @@ from carbon import (
     get_carbon_provider,
 )
 
+from sustainability.metrics import ResearchSustainabilityMetrics
 from knowledge import (
     RuleLoader,
     RuleRepository,
@@ -136,12 +137,9 @@ class PredictivePipeline:
             analysis_result,
         )
 
-        #
-        # Week 8 placeholder.
-        #
-        # ESS integration will be added later.
-        #
-        energy_smell_score = 0.0
+        energy_smell_score = ResearchSustainabilityMetrics.compute_energy_smell_score(
+            smell_report
+        )
 
         complexity_metrics: ComplexityMetrics = (
             self._complexity_extractor.extract(

@@ -44,7 +44,7 @@ class RecursiveDetectorTest(unittest.TestCase):
 
         self.assertEqual(
             findings[0].rule_id,
-            "EKB-COMP-002",
+            "EKB-COMP-003",
         )
 
 
