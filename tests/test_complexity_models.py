@@ -53,7 +53,7 @@ class ComplexityModelsTest(unittest.TestCase):
 
         score = ComplexityScore(
             structural_complexity_index=0.54,
-            carbon_impact_risk_score=0.63,
+            heuristic_risk_score=0.63,
             risk_level=RiskLevel.HIGH,
             recommendation="Refactoring recommended to improve sustainability.",
             metrics=normalized,
@@ -65,7 +65,7 @@ class ComplexityModelsTest(unittest.TestCase):
         )
 
         self.assertAlmostEqual(
-            score.carbon_impact_risk_score,
+            score.heuristic_risk_score,
             0.63,
         )
 

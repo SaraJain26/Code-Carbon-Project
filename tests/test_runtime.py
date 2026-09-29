@@ -19,7 +19,7 @@ class RuntimeEstimatorTest(unittest.TestCase):
 
         complexity = ComplexityScore(
             structural_complexity_index=0.80,
-            carbon_impact_risk_score=0.60,
+            heuristic_risk_score=0.60,
             risk_level=RiskLevel.MODERATE,
             recommendation="",
             metrics=NormalizedComplexityMetrics(
@@ -49,7 +49,7 @@ class RuntimeEstimatorTest(unittest.TestCase):
 
         complexity = ComplexityScore(
             structural_complexity_index=0.50,
-            carbon_impact_risk_score=0.40,
+            heuristic_risk_score=0.40,
             risk_level=RiskLevel.LOW,
             recommendation="",
             metrics=NormalizedComplexityMetrics(

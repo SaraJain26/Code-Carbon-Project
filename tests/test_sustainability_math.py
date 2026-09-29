@@ -16,7 +16,7 @@ class TestSustainabilityMath(unittest.TestCase):
         # Default mock complexity score
         self.complexity = ComplexityScore(
             structural_complexity_index=0.5,
-            carbon_impact_risk_score=0.25,
+            heuristic_risk_score=0.25,
             risk_level=RiskLevel.MODERATE,
             recommendation="",
             metrics=NormalizedComplexityMetrics(

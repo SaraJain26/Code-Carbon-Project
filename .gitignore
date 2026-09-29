@@ -41,3 +41,16 @@ records.txt
 venv/
 env/
 ENV/
+
+# Screenshots, research data, & temporary/standalone documentation
+dashboard_screenshots/
+datasets/
+experiments/
+research/evaluation/
+research/paper_figures/
+walkthrough.md
+code_carbon_master_documentation.md
+Code_Carbon_Project_Walkthrough.pdf
+docs/CODE_CARBON_COMPLETE_DOCUMENTATION.md
+
+

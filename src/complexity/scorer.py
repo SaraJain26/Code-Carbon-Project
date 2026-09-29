@@ -89,13 +89,14 @@ class ComplexityScorer:
         return cls._clamp(sci)
 
     @classmethod
-    def compute_carbon_impact_risk_score(
+    def compute_heuristic_risk_score(
         cls,
         structural_complexity_index: float,
         energy_smell_score: float,
     ) -> float:
         """
-        Compute the Carbon Impact Risk Score (CIRS).
+        Compute the internal heuristic structural-smell risk score (0.55 * SCI + 0.45 * ESS/10).
+        This heuristic score [0, 1] is used internally to classify qualitative RiskLevel.
         """
 
         score = (
@@ -164,18 +165,18 @@ class ComplexityScorer:
 
         sci = cls.compute_structural_complexity_index(metrics)
 
-        cirs = cls.compute_carbon_impact_risk_score(
+        heuristic_score = cls.compute_heuristic_risk_score(
             sci,
             metrics.energy_smell_score,
         )
 
-        risk = cls.classify_risk(cirs)
+        risk = cls.classify_risk(heuristic_score)
 
         recommendation = cls.recommendation(risk)
 
         return ComplexityScore(
             structural_complexity_index=sci,
-            carbon_impact_risk_score=cirs,
+            heuristic_risk_score=heuristic_score,
             risk_level=risk,
             recommendation=recommendation,
             metrics=metrics,

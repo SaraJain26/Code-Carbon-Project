@@ -25,13 +25,19 @@ def _count_code_lines(source: str) -> int:
     This ensures line count and Function Density remain invariant to comment stripping
     during AST transformations.
     """
-    lines = source.splitlines()
-    code_lines = 0
-    for line in lines:
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#"):
-            code_lines += 1
-    return max(code_lines, 1)
+    if not source or not source.strip():
+        return 0
+    try:
+        from radon.raw import analyze
+        return max(analyze(source).sloc, 1)
+    except Exception:
+        lines = source.splitlines()
+        code_lines = 0
+        for line in lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                code_lines += 1
+        return max(code_lines, 1)
 
 
 class StaticAnalysisEngine:

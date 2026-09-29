@@ -11,11 +11,14 @@ import math
 from pathlib import Path
 from datetime import datetime, timezone
 import logging
+import time
+import zipfile
+import io
 from typing import Any
 
 logger = logging.getLogger("codecarbon.api")
 
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, APIRouter
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -28,7 +31,7 @@ from sustainability.metrics import ResearchSustainabilityMetrics
 from energy.models import EnergyResult, EnergyEstimate, RuntimeEstimate
 from knowledge.loader import RuleLoader
 from .utils import serialize_value
-from .models import HealthResponse, AnalyzeResponse, ForecastResponse
+from .models import HealthResponse, AnalyzeResponse, ForecastResponse, ProjectAnalyzeResponse, ProjectFileResult
 
 try:
     _ekb_rules = RuleLoader().load_default_rules()
@@ -36,23 +39,47 @@ try:
 except Exception:
     EKB_RULE_NAMES = {}
 
+import sys
+import asyncio
+from contextlib import asynccontextmanager
+
+if sys.platform == "win32":
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except Exception:
+        pass
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    loop = asyncio.get_running_loop()
+    def custom_exception_handler(loop: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
+        exc = context.get("exception")
+        if isinstance(exc, OSError) and getattr(exc, "winerror", None) in (64, 10054, 10053, 10058):
+            return
+        loop.default_exception_handler(context)
+    loop.set_exception_handler(custom_exception_handler)
+    yield
+
 app = FastAPI(
     title="Code-Carbon API",
     description="Sustainability-First Framework for Predictive Carbon-Aware Software Engineering",
-    version="0.1.0"
+    version="0.1.0",
+    lifespan=lifespan
 )
+
+router = APIRouter()
 
 # Enable CORS for frontend dashboard
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:4173", "http://127.0.0.1:4173", "*"],
+    allow_credentials=False,
     allow_headers=["*"],
     allow_methods=["*"],
 )
 
 
-@app.get("/health", response_model=HealthResponse, tags=["General"])
+@router.api_route("/health", methods=["GET", "HEAD"], response_model=HealthResponse, tags=["General"])
 def get_health() -> dict[str, str]:
     """
     Check the health of the Code-Carbon API server.
@@ -60,7 +87,7 @@ def get_health() -> dict[str, str]:
     return {"status": "healthy"}
 
 
-@app.get("/zones", tags=["Electricity Maps"])
+@router.get("/zones", tags=["Electricity Maps"])
 def get_zones() -> dict[str, Any]:
     """
     Retrieve all supported Electricity Maps zones.
@@ -73,7 +100,7 @@ def get_zones() -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.get("/search-zones", tags=["Electricity Maps"])
+@router.get("/search-zones", tags=["Electricity Maps"])
 def search_zones(q: str = Query(..., min_length=1)) -> dict[str, Any]:
     """
     Search supported Electricity Maps zones by country or code.
@@ -86,27 +113,21 @@ def search_zones(q: str = Query(..., min_length=1)) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.post("/analyze", response_model=AnalyzeResponse, tags=["Analysis"])
-async def analyze_file(
-    file: UploadFile = File(...),
-    zone: str = Form("DK-DK1"),
-    use_global_average: bool = Form(False)
+def run_single_file_analysis(
+    filename: str,
+    source_code: str,
+    zone: str = "DK-DK1",
+    use_global_average: bool = False
 ) -> dict[str, Any]:
     """
-    Upload a Python source file to execute static analysis, carbon estimation, AST transformation, and sandboxed measurement.
+    Core single file analysis logic: static analysis, carbon estimation, AST transformation, and sandboxed measurement.
     """
-    if not file.filename or not file.filename.endswith(".py"):
-        raise HTTPException(status_code=400, detail="Only Python (.py) source files are supported.")
-
     workspace_temp_dir = Path("temp_analysis")
     workspace_temp_dir.mkdir(exist_ok=True)
 
-    temp_path = workspace_temp_dir / f"temp_{datetime.now().timestamp()}_{file.filename}"
+    temp_path = workspace_temp_dir / f"temp_{datetime.now().timestamp()}_{filename}"
 
     try:
-        content_bytes = await file.read()
-        source_code = content_bytes.decode("utf-8", errors="replace")
-
         with open(temp_path, "w", encoding="utf-8") as f:
             f.write(source_code)
 
@@ -151,7 +172,7 @@ async def analyze_file(
         )
 
         # Post-Recommendation Estimation Logic (Re-run static analysis & EKB on refactored code)
-        temp_opt_path = workspace_temp_dir / f"temp_opt_{datetime.now().timestamp()}_{file.filename}"
+        temp_opt_path = workspace_temp_dir / f"temp_opt_{datetime.now().timestamp()}_{filename}"
         with open(temp_opt_path, "w", encoding="utf-8") as f:
             f.write(transform_res.optimized_code)
 
@@ -198,11 +219,6 @@ async def analyze_file(
             predicted_reduction_percent = round(((cirs_before - cirs_after) / cirs_before) * 100.0, 1) if cirs_before > 0 else 0.0
             measured_reduction_percent = measured_runtime.get("measured_savings", {}).get("time_reduction_percent", 0.0)
 
-            # The current energy model is driven by structural complexity.  A safe
-            # refactor such as moving file-handle creation outside a loop can resolve
-            # a smell without changing cyclomatic complexity, nesting, or the
-            # modelled energy estimate.  Surface that distinction to clients rather
-            # than implying that every resolved finding changes every headline score.
             metric_changes = {
                 "complexity_changed": not math.isclose(sci_before, sci_after, abs_tol=1e-9),
                 "energy_changed": not math.isclose(energy_joules_before, energy_joules_after, abs_tol=1e-9),
@@ -210,55 +226,31 @@ async def analyze_file(
                 "carbon_risk_changed": not math.isclose(cirs_before, cirs_after, abs_tol=1e-12),
             }
 
-            # Build findings comparison
-            auto_fixed_lines = {(fix.get("rule_id"), fix.get("line_number")) for fix in transform_res.auto_applied_fixes}
-            findings_after_list = list(smell_report_after.findings)
-            used_after_indices = set()
+            # Build rule-aligned findings comparison matching recommendation report
+            auto_fixed_rules = {fix.get("rule_id") for fix in transform_res.auto_applied_fixes}
+            findings_after_rules = {f.rule_id for f in smell_report_after.findings}
 
             findings_comparison = []
-            for f in smell_report.findings:
-                f_line = getattr(f, "line_number", None)
-                is_auto_fixed = (f.rule_id, f_line) in auto_fixed_lines
+            for rec in recommendation_report.recommendations:
+                f_line = getattr(rec, "line_number", None)
+                if f_line is None and hasattr(rec, "findings") and rec.findings:
+                    f_line = getattr(rec.findings[0], "line_number", None)
 
-                after_match = None
-                best_dist = float("inf")
-                best_idx = None
+                is_auto_fixed = rec.rule_id in auto_fixed_rules
+                still_present = rec.rule_id in findings_after_rules
+                is_resolved = is_auto_fixed or (not still_present)
 
-                for idx, f_after in enumerate(findings_after_list):
-                    if idx in used_after_indices:
-                        continue
-                    if f_after.rule_id == f.rule_id:
-                        f_after_line = getattr(f_after, "line_number", None)
-                        if f_line is not None and f_after_line is not None:
-                            dist = abs(f_after_line - f_line)
-                            if dist < best_dist:
-                                best_dist = dist
-                                best_idx = idx
-                        elif best_idx is None:
-                            best_idx = idx
+                conf_before = getattr(rec, "confidence", 1.0)
+                conf_after = 0.0 if is_resolved else conf_before
 
-                if best_idx is not None:
-                    after_match = findings_after_list[best_idx]
-                    used_after_indices.add(best_idx)
-
-                if is_auto_fixed:
-                    conf_after = 0.0
-                    is_resolved = True
-                elif after_match is None:
-                    conf_after = 0.0
-                    is_resolved = True
-                else:
-                    conf_after = after_match.confidence.value
-                    is_resolved = (conf_after < 0.1)
-
-                rule_human_name = EKB_RULE_NAMES.get(f.rule_id, getattr(f, "message", f.rule_id))
+                rule_human_name = getattr(rec, "title", EKB_RULE_NAMES.get(rec.rule_id, rec.rule_id))
 
                 findings_comparison.append({
-                    "rule_id": f.rule_id,
+                    "rule_id": rec.rule_id,
                     "rule_name": rule_human_name,
-                    "category": f.category.name if hasattr(f.category, "name") else str(f.category),
+                    "category": str(getattr(rec, "category", "Code Structure")),
                     "line_number": f_line,
-                    "confidence_before": round(f.confidence.value, 2),
+                    "confidence_before": round(conf_before, 2),
                     "confidence_after": round(conf_after, 2),
                     "is_resolved": is_resolved
                 })
@@ -321,8 +313,9 @@ async def analyze_file(
                 "carbon_metadata": carbon_metadata
             }
 
-            # Save persistent optimized file for client download/view
-            opt_filename = f"optimized_{file.filename}"
+            raw_base = Path(filename).name
+            stem = raw_base[:-3] if raw_base.lower().endswith(".py") else raw_base
+            opt_filename = f"{stem}_optimized.py"
             persistent_opt_path = workspace_temp_dir / opt_filename
             with open(persistent_opt_path, "w", encoding="utf-8") as f:
                 f.write(transform_res.optimized_code)
@@ -336,7 +329,7 @@ async def analyze_file(
                     pass
 
         response = {
-            "filename": file.filename,
+            "filename": filename,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "pipeline_raw": serialize_value(result),
             "research_metrics": {
@@ -357,9 +350,6 @@ async def analyze_file(
 
         return response
 
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
     finally:
         if temp_path.exists():
             try:
@@ -368,7 +358,196 @@ async def analyze_file(
                 pass
 
 
-@app.get("/download-optimized/{file_name}", tags=["Analysis"])
+@router.post("/analyze", response_model=AnalyzeResponse, tags=["Analysis"])
+async def analyze_file(
+    file: UploadFile = File(...),
+    zone: str = Form("DK-DK1"),
+    use_global_average: bool = Form(False)
+) -> dict[str, Any]:
+    """
+    Upload a Python source file to execute static analysis, carbon estimation, AST transformation, and sandboxed measurement.
+    """
+    if not file.filename or not file.filename.endswith(".py"):
+        raise HTTPException(status_code=400, detail="Only Python (.py) source files are supported.")
+
+    try:
+        content_bytes = await file.read()
+        source_code = content_bytes.decode("utf-8", errors="replace")
+        return run_single_file_analysis(file.filename, source_code, zone=zone, use_global_average=use_global_average)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/analyze-project", response_model=ProjectAnalyzeResponse, tags=["Analysis"])
+async def analyze_project(
+    files: list[UploadFile] = File(None),
+    file: UploadFile = File(None),
+    zone: str = Form("DK-DK1"),
+    use_global_average: bool = Form(False)
+) -> dict[str, Any]:
+    """
+    Upload an entire Python project (ZIP archive or multiple .py files).
+    Executes static analysis, EKB detection, SCI/ESS/CIRS, AST transformer, and sandbox timings across files.
+    Calculates macro-average SCI & ESS, primary Average Per-File CIRS, secondary Total Summed CIRS, and per-file breakdowns.
+    """
+    start_time = time.time()
+    items_to_analyze: list[tuple[str, bytes]] = []
+    project_name = "Python Project"
+
+    if file is not None and file.filename:
+        project_name = file.filename
+        content_bytes = await file.read()
+        if file.filename.endswith(".zip"):
+            try:
+                with zipfile.ZipFile(io.BytesIO(content_bytes)) as zf:
+                    for zip_info in zf.infolist():
+                        if zip_info.is_dir():
+                            continue
+                        name = zip_info.filename
+                        parts = Path(name).parts
+                        if any(p.startswith(".") or p in ("__pycache__", "venv", "env", "node_modules", "dist", "build", ".pytest_cache") for p in parts):
+                            continue
+                        if name.endswith(".py"):
+                            file_data = zf.read(zip_info)
+                            items_to_analyze.append((name, file_data))
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Failed to extract ZIP archive: {str(e)}")
+        elif file.filename.endswith(".py"):
+            items_to_analyze.append((file.filename, content_bytes))
+        else:
+            raise HTTPException(status_code=400, detail="Uploaded file must be a .zip archive or a .py source file.")
+
+    if files:
+        for f in files:
+            if f.filename and f.filename.endswith(".py"):
+                c_bytes = await f.read()
+                clean_path = f.filename.replace("\\", "/")
+                items_to_analyze.append((clean_path, c_bytes))
+
+    if not items_to_analyze:
+        return {
+            "project_name": project_name,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "total_files": 0,
+            "successful_files": 0,
+            "error_files": 0,
+            "total_lines_of_code": 0,
+            "total_findings": 0,
+            "avg_sci": 0.0,
+            "avg_ess": 0.0,
+            "avg_cirs": 0.0,
+            "total_cirs": 0.0,
+            "total_energy_joules": 0.0,
+            "total_energy_kwh": 0.0,
+            "total_analysis_time_sec": round(time.time() - start_time, 3),
+            "files": []
+        }
+
+    file_results = []
+    sci_list = []
+    ess_list = []
+    cirs_list = []
+    total_joules = 0.0
+    total_loc = 0
+    total_findings = 0
+    success_count = 0
+    error_count = 0
+
+    for rel_path, c_bytes in items_to_analyze:
+        f_start = time.time()
+        filename_only = Path(rel_path).name
+        code_str = c_bytes.decode("utf-8", errors="replace")
+        loc = len([line for line in code_str.splitlines() if line.strip()])
+
+        try:
+            res_dict = run_single_file_analysis(filename_only, code_str, zone=zone, use_global_average=use_global_average)
+            f_time = round(time.time() - f_start, 3)
+
+            f_sci = res_dict["post_refactor_estimation"]["sci_before"]
+            f_ess = res_dict["research_metrics"]["energy_smell_score"]
+            f_cirs = res_dict["research_metrics"]["carbon_impact_risk_score"]
+            f_joules = res_dict["post_refactor_estimation"]["energy_before_joules"]
+            raw_summary = res_dict.get("pipeline_raw", {}).get("energy_smell_report", {}).get("summary", {})
+            if "total_findings" in raw_summary:
+                f_findings = int(raw_summary["total_findings"])
+            else:
+                recs = res_dict.get("recommendations", {})
+                if isinstance(recs, dict):
+                    f_findings = len(recs.get("recommendations", []))
+                elif isinstance(recs, list):
+                    f_findings = len(recs)
+                else:
+                    f_findings = 0
+
+            sci_list.append(f_sci)
+            ess_list.append(f_ess)
+            cirs_list.append(f_cirs)
+            total_joules += f_joules
+            total_loc += loc
+            total_findings += f_findings
+            success_count += 1
+
+            file_results.append({
+                "filename": filename_only,
+                "relative_path": rel_path,
+                "lines_of_code": loc,
+                "status": "success",
+                "error_message": None,
+                "findings_count": f_findings,
+                "sci": round(f_sci, 4),
+                "ess": round(f_ess, 2),
+                "cirs": round(f_cirs, 6),
+                "energy_joules": round(f_joules, 4),
+                "analysis_time_sec": f_time,
+                "single_file_response": res_dict
+            })
+        except Exception as exc:
+            f_time = round(time.time() - f_start, 3)
+            error_count += 1
+            total_loc += loc
+            file_results.append({
+                "filename": filename_only,
+                "relative_path": rel_path,
+                "lines_of_code": loc,
+                "status": "error",
+                "error_message": str(exc),
+                "findings_count": 0,
+                "sci": 0.0,
+                "ess": 0.0,
+                "cirs": 0.0,
+                "energy_joules": 0.0,
+                "analysis_time_sec": f_time,
+                "single_file_response": None
+            })
+
+    total_time = round(time.time() - start_time, 3)
+    avg_sci = round(sum(sci_list) / len(sci_list), 4) if sci_list else 0.0
+    avg_ess = round(sum(ess_list) / len(ess_list), 2) if ess_list else 0.0
+    avg_cirs = round(sum(cirs_list) / len(cirs_list), 6) if cirs_list else 0.0
+    total_cirs = round(sum(cirs_list), 6) if cirs_list else 0.0
+
+    return {
+        "project_name": project_name,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "total_files": len(items_to_analyze),
+        "successful_files": success_count,
+        "error_files": error_count,
+        "total_lines_of_code": total_loc,
+        "total_findings": total_findings,
+        "avg_sci": avg_sci,
+        "avg_ess": avg_ess,
+        "avg_cirs": avg_cirs,
+        "total_cirs": total_cirs,
+        "total_energy_joules": round(total_joules, 4),
+        "total_energy_kwh": round(total_joules / 3_600_000.0, 8),
+        "total_analysis_time_sec": total_time,
+        "files": file_results
+    }
+
+
+@router.get("/download-optimized/{file_name}", tags=["Analysis"])
 def download_optimized_file(file_name: str) -> FileResponse:
     """
     Download the refactored/optimized Python source file generated during analysis.
@@ -387,7 +566,7 @@ def download_optimized_file(file_name: str) -> FileResponse:
     )
 
 
-@app.get("/forecast", response_model=ForecastResponse, tags=["Scheduling"])
+@router.get("/forecast", response_model=ForecastResponse, tags=["Scheduling"])
 def get_forecast(
     zone: str = Query("DK-DK1", description="Grid zone ID"),
     energy_joules: float = Query(100.0, description="Energy consumption in Joules")
@@ -404,6 +583,8 @@ def get_forecast(
 
         try:
             forecasts = pipeline._carbon_engine.forecast(dummy_energy, zone=zone)
+            if not forecasts:
+                raise ValueError("Empty forecast data")
         except Exception:
             # Fallback mock forecast data if API key / forecast endpoint unavailable
             now = datetime.now(timezone.utc)
@@ -456,3 +637,9 @@ def get_forecast(
 
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# Register router for both root paths and /api prefix paths
+app.include_router(router)
+app.include_router(router, prefix="/api")
+

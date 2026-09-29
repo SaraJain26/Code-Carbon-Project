@@ -94,6 +94,82 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.json()["detail"], "Optimized file not found.")
 
+    def test_analyze_project_zip(self):
+        import io
+        import zipfile
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w") as zf:
+            zf.writestr("module_a.py", "def a(): return [i*2 for i in range(100)]")
+            zf.writestr("module_b.py", "def b():\n  for x in range(10):\n    for y in range(10):\n      pass")
+
+        zip_bytes = zip_buffer.getvalue()
+        files = {
+            "file": ("test_project.zip", zip_bytes, "application/zip")
+        }
+        data = {
+            "zone": "DK-DK1",
+            "use_global_average": "false"
+        }
+        response = self.client.post("/analyze-project", files=files, data=data)
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        self.assertEqual(payload["project_name"], "test_project.zip")
+        self.assertEqual(payload["total_files"], 2)
+        self.assertEqual(payload["successful_files"], 2)
+        self.assertEqual(payload["error_files"], 0)
+        self.assertIn("avg_sci", payload)
+        self.assertIn("avg_ess", payload)
+        self.assertIn("avg_cirs", payload)
+        self.assertIn("total_cirs", payload)
+        self.assertEqual(len(payload["files"]), 2)
+
+    def test_analyze_project_partial_failure(self):
+        import io
+        import zipfile
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w") as zf:
+            zf.writestr("valid.py", "def v(): return 42")
+            zf.writestr("invalid.py", "def broken_syntax(:\n  return 0")
+
+        zip_bytes = zip_buffer.getvalue()
+        files = {
+            "file": ("partial_project.zip", zip_bytes, "application/zip")
+        }
+        response = self.client.post("/analyze-project", files=files)
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        self.assertEqual(payload["total_files"], 2)
+        self.assertEqual(payload["successful_files"], 1)
+        self.assertEqual(payload["error_files"], 1)
+        
+        # Verify valid file succeeded and invalid file recorded error cleanly
+        files_dict = {f["filename"]: f for f in payload["files"]}
+        self.assertEqual(files_dict["valid.py"]["status"], "success")
+        self.assertEqual(files_dict["invalid.py"]["status"], "error")
+        self.assertIsNotNone(files_dict["invalid.py"]["error_message"])
+
+    def test_forecast_endpoint_success(self):
+        response = self.client.get("/forecast?zone=IN&energy_joules=268.75")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        self.assertEqual(payload["zone"], "IN")
+        self.assertIn("current_carbon_intensity", payload)
+        self.assertIn("lowest_forecast_intensity", payload)
+        self.assertIn("percentage_reduction", payload)
+        self.assertIn("recommended_execution_time", payload)
+        self.assertIn("hourly_forecasts", payload)
+
+        forecasts = payload["hourly_forecasts"]
+        self.assertGreater(len(forecasts), 0)
+        
+        # Verify recommended_execution_time matches the forecast entry with lowest intensity
+        lowest_entry = min(forecasts, key=lambda item: item["carbon_intensity"])
+        self.assertEqual(payload["lowest_forecast_intensity"], lowest_entry["carbon_intensity"])
+        self.assertEqual(payload["recommended_execution_time"], lowest_entry["timestamp"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -18,7 +18,7 @@ class TestRecommendationEngine(unittest.TestCase):
         # Create mock complexity score
         self.complexity = ComplexityScore(
             structural_complexity_index=0.80,
-            carbon_impact_risk_score=0.60,
+            heuristic_risk_score=0.60,
             risk_level=RiskLevel.MODERATE,
             recommendation="",
             metrics=NormalizedComplexityMetrics(

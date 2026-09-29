@@ -32,13 +32,13 @@ class ComplexityScorerTest(unittest.TestCase):
 
         self.assertAlmostEqual(sci, expected)
 
-    def test_carbon_impact_risk_score(self):
+    def test_heuristic_risk_score(self):
 
         sci = ComplexityScorer.compute_structural_complexity_index(
             self.metrics
         )
 
-        cirs = ComplexityScorer.compute_carbon_impact_risk_score(
+        h_score = ComplexityScorer.compute_heuristic_risk_score(
             sci,
             self.metrics.energy_smell_score,
         )
@@ -48,7 +48,7 @@ class ComplexityScorerTest(unittest.TestCase):
             + 0.45 * 0.80
         )
 
-        self.assertAlmostEqual(cirs, expected)
+        self.assertAlmostEqual(h_score, expected)
 
     def test_risk_classification(self):
 
@@ -88,7 +88,7 @@ class ComplexityScorerTest(unittest.TestCase):
         )
 
         self.assertTrue(
-            0.0 <= score.carbon_impact_risk_score <= 1.0
+            0.0 <= score.heuristic_risk_score <= 1.0
         )
 
         self.assertIsInstance(score.risk_level, RiskLevel)

@@ -25,6 +25,11 @@ class ComplexityMetricsExtractor:
         loop_count = len(analysis_result.loops)
 
         lines_of_code = analysis_result.module.line_count
+        if lines_of_code == 0 and hasattr(analysis_result.module, "source_file") and analysis_result.module.source_file:
+            try:
+                lines_of_code = self._radon.compute_sloc(Path(analysis_result.module.source_file))
+            except Exception:
+                lines_of_code = 0
 
         max_nesting_depth = max(
             (loop.nesting_depth for loop in analysis_result.loops),

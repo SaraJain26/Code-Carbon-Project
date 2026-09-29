@@ -71,11 +71,11 @@ class ComplexityScore:
     structural_complexity_index
         Structural Complexity Index (SCI).
 
-    carbon_impact_risk_score
-        Final Carbon Impact Risk Score (CIRS).
+    heuristic_risk_score
+        Internal heuristic structural-smell risk score (0.55 * SCI + 0.45 * ESS/10).
 
     risk_level
-        Qualitative interpretation of the carbon impact score.
+        Qualitative interpretation of the heuristic risk score.
 
     recommendation
         Human-readable recommendation for improving sustainability.
@@ -88,7 +88,7 @@ class ComplexityScore:
     """
     structural_complexity_index: float
 
-    carbon_impact_risk_score: float
+    heuristic_risk_score: float
 
     risk_level: RiskLevel
 

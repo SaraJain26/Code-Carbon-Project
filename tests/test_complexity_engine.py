@@ -33,7 +33,7 @@ class ComplexityEngineTest(unittest.TestCase):
         )
 
         self.assertTrue(
-            0.0 <= result.carbon_impact_risk_score <= 1.0
+            0.0 <= result.heuristic_risk_score <= 1.0
         )
 
         self.assertIsInstance(result.risk_level, RiskLevel)

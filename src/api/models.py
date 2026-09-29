@@ -84,6 +84,39 @@ class AnalyzeResponse(BaseModel):
     optimized_file_url: str | None = Field(None, description="URL endpoint to download the refactored optimized source file")
 
 
+class ProjectFileResult(BaseModel):
+    filename: str = Field(..., description="Name of the file")
+    relative_path: str = Field(..., description="Relative path in project")
+    lines_of_code: int = Field(0, description="Lines of code in file")
+    status: str = Field("success", description="Analysis status: success or error")
+    error_message: str | None = Field(None, description="Error message if analysis failed")
+    findings_count: int = Field(0, description="Number of energy smells found")
+    sci: float = Field(0.0, description="Structural Complexity Index")
+    ess: float = Field(0.0, description="Energy Smell Score")
+    cirs: float = Field(0.0, description="Carbon Impact Risk Score")
+    energy_joules: float = Field(0.0, description="Energy consumption in Joules")
+    analysis_time_sec: float = Field(0.0, description="Analysis duration in seconds")
+    single_file_response: dict[str, Any] | None = Field(None, description="Full single-file analyze response")
+
+
+class ProjectAnalyzeResponse(BaseModel):
+    project_name: str = Field(..., description="Name of the uploaded project / archive")
+    timestamp: str = Field(..., description="ISO 8601 timestamp of analysis execution")
+    total_files: int = Field(..., description="Total number of .py files found in project")
+    successful_files: int = Field(..., description="Number of successfully analyzed files")
+    error_files: int = Field(..., description="Number of files that failed analysis")
+    total_lines_of_code: int = Field(..., description="Total lines of Python code across project")
+    total_findings: int = Field(..., description="Total energy smells detected across all files")
+    avg_sci: float = Field(..., description="Primary metric: Macro-average Structural Complexity Index")
+    avg_ess: float = Field(..., description="Primary metric: Macro-average Energy Smell Score")
+    avg_cirs: float = Field(..., description="Primary metric: Macro-average Carbon Impact Risk Score per file (gCO2eq/run)")
+    total_cirs: float = Field(..., description="Secondary metric: Total summed project CIRS capacity (gCO2eq/run)")
+    total_energy_joules: float = Field(..., description="Summed energy consumption in Joules across files")
+    total_energy_kwh: float = Field(..., description="Summed energy consumption in kWh across files")
+    total_analysis_time_sec: float = Field(..., description="Total project analysis time in seconds")
+    files: list[ProjectFileResult] = Field(default_factory=list, description="Per-file detailed breakdown")
+
+
 class ForecastResponse(BaseModel):
     zone: str = Field(..., description="Grid zone key")
     current_carbon_intensity: float = Field(..., description="Current carbon intensity in gCO2eq/kWh")
@@ -91,3 +124,5 @@ class ForecastResponse(BaseModel):
     percentage_reduction: float = Field(..., description="Percentage carbon reduction expected")
     recommended_execution_time: str = Field(..., description="ISO 8601 timestamp of best execution window")
     hourly_forecasts: list[dict[str, Any]] = Field(..., description="Hourly forecast data points")
+
+
