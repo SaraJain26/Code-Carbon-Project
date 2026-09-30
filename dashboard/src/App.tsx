@@ -1,6 +1,36 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, Code2, Download, FileCode2, FileText, Flame, Folder, FolderArchive, Gauge, Globe2, Leaf, LoaderCircle, Moon, Play, Search, Sparkles, Sun, Upload, X } from 'lucide-react';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+
+const CATEGORY_COLORS: Record<string, string> = {
+  'Computation': '#2e6956',
+  'File & I/O': '#3b82f6',
+  'Memory': '#8b5cf6',
+  'Network': '#06b6d4',
+  'Control Flow': '#f59e0b',
+  'Other': '#64748b'
+};
+
+const SEVERITY_COLORS: Record<string, string> = {
+  'High Severity': '#ef4444',
+  'High': '#ef4444',
+  'Medium Severity': '#f59e0b',
+  'Medium': '#f59e0b',
+  'Low Severity': '#10b981',
+  'Low': '#10b981'
+};
+
+function ChartFallback({ title, message }: { title?: string; message?: string }) {
+  return (
+    <div className="empty-chart-fallback">
+      <AlertCircle size={22} style={{ color: 'var(--muted)', marginBottom: '8px' }} />
+      <p style={{ margin: 0, fontWeight: 600, color: 'var(--ink)', fontSize: '13px' }}>
+        {title || 'No data available for this visualization'}
+      </p>
+      {message && <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '11px' }}>{message}</p>}
+    </div>
+  );
+}
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
 import JSZip from 'jszip';
@@ -361,6 +391,118 @@ export default function App() {
     if (!projectResult?.files) return [];
     return [...projectResult.files].sort((a, b) => b.findings_count - a.findings_count).slice(0, 3);
   }, [projectResult]);
+
+  const topCarbonFiles = useMemo(() => {
+    if (!projectResult?.files) return [];
+    return [...projectResult.files]
+      .map(f => ({
+        ...f,
+        carbonGrams: ((f.energy_joules || 0) / 3600000.0) * (carbonIntensityToDisplay || 435)
+      }))
+      .sort((a, b) => b.carbonGrams - a.carbonGrams)
+      .slice(0, 3);
+  }, [projectResult, carbonIntensityToDisplay]);
+
+  // Project chart datasets
+  const projectFilesEnergyData = useMemo(() => {
+    if (!projectResult?.files) return [];
+    return projectResult.files.map(f => ({
+      name: f.filename,
+      relativePath: f.relative_path,
+      energyJoules: Number(f.energy_joules || 0),
+      energyKwh: Number((f.energy_joules || 0) / 3600000.0)
+    }));
+  }, [projectResult]);
+
+  const projectFilesCarbonData = useMemo(() => {
+    if (!projectResult?.files) return [];
+    return projectResult.files.map(f => ({
+      name: f.filename,
+      relativePath: f.relative_path,
+      carbonGrams: Number(((f.energy_joules || 0) / 3600000.0) * (carbonIntensityToDisplay || 435)),
+      cirs: Number(f.cirs || 0)
+    }));
+  }, [projectResult, carbonIntensityToDisplay]);
+
+  const projectFilesSciData = useMemo(() => {
+    if (!projectResult?.files) return [];
+    return projectResult.files.map(f => ({
+      name: f.filename,
+      relativePath: f.relative_path,
+      sci: Number(f.sci || 0)
+    }));
+  }, [projectResult]);
+
+  const projectFilesEssData = useMemo(() => {
+    if (!projectResult?.files) return [];
+    return projectResult.files.map(f => ({
+      name: f.filename,
+      relativePath: f.relative_path,
+      ess: Number(f.ess || 0)
+    }));
+  }, [projectResult]);
+
+  const projectFilesCirsData = useMemo(() => {
+    if (!projectResult?.files) return [];
+    return projectResult.files.map(f => ({
+      name: f.filename,
+      relativePath: f.relative_path,
+      cirs: Number(f.cirs || 0)
+    }));
+  }, [projectResult]);
+
+  const projectCategoryDistributionData = useMemo(() => {
+    return projectCategoryDistribution.filter(c => c.count > 0);
+  }, [projectCategoryDistribution]);
+
+  const projectSeverityDistribution = useMemo(() => {
+    if (!projectResult?.files) return [];
+    let high = 0, medium = 0, low = 0;
+    for (const f of projectResult.files) {
+      const fileResp = f.single_file_response;
+      if (!fileResp) continue;
+      const summary = fileResp.pipeline_raw?.energy_smell_report?.summary;
+      if (summary) {
+        high += summary.high_severity_count || 0;
+        medium += summary.medium_severity_count || 0;
+        low += summary.low_severity_count || 0;
+      } else {
+        const findings = fileResp.pipeline_raw?.energy_smell_report?.findings || fileResp.findings || [];
+        for (const finding of findings) {
+          const sev = String(finding.severity || '').toLowerCase();
+          if (sev === 'high' || sev === 'critical') high++;
+          else if (sev === 'low' || sev === 'info') low++;
+          else medium++;
+        }
+      }
+    }
+    const list = [
+      { name: 'High Severity', count: high, color: '#ef4444' },
+      { name: 'Medium Severity', count: medium, color: '#f59e0b' },
+      { name: 'Low Severity', count: low, color: '#10b981' }
+    ];
+    return list.filter(item => item.count > 0);
+  }, [projectResult]);
+
+  const singleFileComplexityData = useMemo(() => {
+    if (!result) return [];
+    return [
+      { name: 'CC', full: 'Cyclomatic Complexity', value: complexity.cc, rawValue: fixed(complexity.cc, 1), unit: 'decision paths' },
+      { name: 'ND', full: 'Nesting Depth', value: complexity.nd, rawValue: fixed(complexity.nd, 0), unit: 'max depth' },
+      { name: 'FD (x100)', full: 'Function Density', value: Number((complexity.fd * 100).toFixed(2)), rawValue: fixed(complexity.fd, 4), unit: 'funcs/LOC' },
+      { name: 'SCI (x100)', full: 'Structural Index', value: Number((complexity.sci * 100).toFixed(2)), rawValue: fixed(complexity.sci, 4), unit: 'index (0-1)' }
+    ];
+  }, [result, complexity]);
+
+  const singleFileRefactorComparisonData = useMemo(() => {
+    if (!postRefactor || postRefactor.sci_before === undefined) return [];
+    return [
+      { name: 'SCI (x100)', Before: Number(((postRefactor.sci_before || 0) * 100).toFixed(2)), After: Number(((postRefactor.sci_after || 0) * 100).toFixed(2)) },
+      { name: 'ESS (0-10)', Before: Number((postRefactor.ess_before || 0).toFixed(1)), After: Number((postRefactor.ess_after || 0).toFixed(1)) },
+      { name: 'Energy (J)', Before: Number((postRefactor.energy_before_joules || 0).toFixed(2)), After: Number((postRefactor.energy_after_joules || 0).toFixed(2)) },
+      { name: 'CIRS (x1e4)', Before: Number(((postRefactor.cirs_before || 0) * 10000).toFixed(2)), After: Number(((postRefactor.cirs_after || 0) * 10000).toFixed(2)) }
+    ];
+  }, [postRefactor]);
 
   // Sorted and searched project file breakdown table
   const sortedProjectFiles = useMemo(() => {
@@ -943,73 +1085,319 @@ export default function App() {
           <Metric label="Total CIRS Capacity" metric={fixed(projectResult.total_cirs, 6)} unit="SUM (gCO₂eq/run)" tone="ink" />
         </div>
 
-        <div className="report-grid" style={{ marginTop: '20px', gridTemplateColumns: '1fr 1fr 1fr' }}>
-          <section className="panel">
-            <div className="panel-head">
-              <div><p className="overline">PROJECT SUSTAINABILITY SIGNALS</p><h3>Findings Distribution by Category</h3></div>
-              <span>{projectResult.total_findings} smells across project</span>
+        {/* PROJECT TOP FILES SPOTLIGHT */}
+        <section className="chart-section">
+          <div className="chart-section-title">
+            <div>
+              <p className="overline">PROJECT HIGHLIGHTS</p>
+              <h3>High-Impact Files Spotlight</h3>
             </div>
-            <div className="category-signal-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px', marginTop: '16px' }}>
-              {projectCategoryDistribution.map(cat => (
-                <div key={cat.name} style={{ background: 'var(--card)', border: '1px solid var(--line)', padding: '10px 4px', borderRadius: '8px', textAlign: 'center' }}>
-                  <p style={{ fontSize: '10px', color: 'var(--muted)', margin: 0, textTransform: 'capitalize' }}>{cat.name}</p>
-                  <strong style={{ fontSize: '18px', color: cat.count > 0 ? '#c38c3d' : 'var(--forest)', display: 'block', margin: '4px 0 0' }}>{cat.count}</strong>
-                  <span style={{ fontSize: '9px', color: 'var(--muted)' }}>findings</span>
+            <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
+              Ranked from real runtime & static metrics
+            </span>
+          </div>
+          <div className="top-files-grid">
+            {topEnergyFiles[0] ? (
+              <article className="top-file-card">
+                <span className="top-file-badge energy">
+                  <Flame size={12} /> Highest Energy Demand
+                </span>
+                <h4 title={topEnergyFiles[0].filename}>{topEnergyFiles[0].filename}</h4>
+                <small title={topEnergyFiles[0].relative_path}>{topEnergyFiles[0].relative_path}</small>
+                <div className="stat-val">{fixed(topEnergyFiles[0].energy_joules, 2)} J</div>
+                <div className="stat-sub">
+                  {fixed(topEnergyFiles[0].energy_joules / 3600000.0, 6)} kWh ({fixed((topEnergyFiles[0].energy_joules / (projectResult.total_energy_joules || 1)) * 100, 1)}% of project energy)
                 </div>
-              ))}
-            </div>
-          </section>
+              </article>
+            ) : null}
 
-          <section className="panel">
-            <div className="panel-head">
-              <div><p className="overline">STRUCTURAL COMPLEXITY</p><h3>Project Aggregates</h3></div>
-              <span>{projectComplexitySummary.totalFunctions} total functions</span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginTop: '14px' }}>
-              <div style={{ background: 'var(--card)', border: '1px solid var(--line)', padding: '10px', borderRadius: '7px' }}>
-                <p style={{ fontSize: '10px', color: 'var(--muted)', margin: 0 }}>Total SLOC</p>
-                <strong style={{ fontSize: '16px', color: 'var(--ink)', display: 'block', margin: '4px 0 0' }}>{projectResult.total_lines_of_code}</strong>
-                <span style={{ fontSize: '9px', color: 'var(--muted)' }}>SUM</span>
-              </div>
-              <div style={{ background: 'var(--card)', border: '1px solid var(--line)', padding: '10px', borderRadius: '7px' }}>
-                <p style={{ fontSize: '10px', color: 'var(--muted)', margin: 0 }}>Max ND</p>
-                <strong style={{ fontSize: '16px', color: 'var(--ink)', display: 'block', margin: '4px 0 0' }}>{projectComplexitySummary.maxND}</strong>
-                <span style={{ fontSize: '9px', color: 'var(--muted)' }}>MAX DEPTH</span>
-              </div>
-              <div style={{ background: 'var(--card)', border: '1px solid var(--line)', padding: '10px', borderRadius: '7px' }}>
-                <p style={{ fontSize: '10px', color: 'var(--muted)', margin: 0 }}>Avg FD</p>
-                <strong style={{ fontSize: '16px', color: 'var(--ink)', display: 'block', margin: '4px 0 0' }}>{fixed(projectComplexitySummary.avgFD, 3)}</strong>
-                <span style={{ fontSize: '9px', color: 'var(--muted)' }}>MACRO-AVG</span>
-              </div>
-            </div>
-          </section>
+            {topCarbonFiles[0] ? (
+              <article className="top-file-card">
+                <span className="top-file-badge carbon">
+                  <Leaf size={12} /> Highest Carbon Footprint
+                </span>
+                <h4 title={topCarbonFiles[0].filename}>{topCarbonFiles[0].filename}</h4>
+                <small title={topCarbonFiles[0].relative_path}>{topCarbonFiles[0].relative_path}</small>
+                <div className="stat-val">{fixed(topCarbonFiles[0].carbonGrams, 4)} g</div>
+                <div className="stat-sub">
+                  gCO₂eq per run (CIRS score: {fixed(topCarbonFiles[0].cirs, 6)})
+                </div>
+              </article>
+            ) : null}
 
-          <section className="panel">
-            <div className="panel-head">
-              <div><p className="overline">PROJECT HIGHLIGHTS</p><h3>Ranked Code Paths</h3></div>
-            </div>
-            <div style={{ display: 'grid', gap: '10px', marginTop: '14px' }}>
-              {topEnergyFiles[0] && (
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', background: 'var(--card)', border: '1px solid var(--line)', padding: '10px 12px', borderRadius: '7px' }}>
-                  <Flame size={18} style={{ color: '#c38c3d' }} />
-                  <div>
-                    <strong style={{ fontSize: '12px', display: 'block' }}>Highest Estimated Energy</strong>
-                    <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{topEnergyFiles[0].filename} ({fixed(topEnergyFiles[0].energy_joules, 2)} J)</span>
-                  </div>
+            {topFindingsFiles[0] ? (
+              <article className="top-file-card">
+                <span className="top-file-badge smells">
+                  <Sparkles size={12} /> Most Smell-Dense File
+                </span>
+                <h4 title={topFindingsFiles[0].filename}>{topFindingsFiles[0].filename}</h4>
+                <small title={topFindingsFiles[0].relative_path}>{topFindingsFiles[0].relative_path}</small>
+                <div className="stat-val">{topFindingsFiles[0].findings_count} Smells</div>
+                <div className="stat-sub">
+                  ESS Score: {fixed(topFindingsFiles[0].ess, 1)} / 10 ({topFindingsFiles[0].lines_of_code} LOC)
                 </div>
-              )}
-              {topFindingsFiles[0] && (
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', background: 'var(--card)', border: '1px solid var(--line)', padding: '10px 12px', borderRadius: '7px' }}>
-                  <Sparkles size={18} style={{ color: '#2e6956' }} />
-                  <div>
-                    <strong style={{ fontSize: '12px', display: 'block' }}>Most Smell-Dense File</strong>
-                    <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{topFindingsFiles[0].filename} ({topFindingsFiles[0].findings_count} findings)</span>
-                  </div>
-                </div>
-              )}
+              </article>
+            ) : null}
+          </div>
+        </section>
+
+        {/* SECTION 1: ENERGY & CARBON ANALYTICS */}
+        <section className="chart-section">
+          <div className="chart-section-title">
+            <div>
+              <p className="overline">ENERGY & CARBON METRICS BY FILE</p>
+              <h3>Resource & Emissions Breakdown</h3>
             </div>
-          </section>
-        </div>
+            <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
+              Comparison across {projectResult.files.length} analyzed files
+            </span>
+          </div>
+
+          <div className="chart-grid-2">
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <p className="overline">ENERGY CONSUMPTION</p>
+                  <h3>Energy Consumption by File (Joules)</h3>
+                </div>
+                <span>Real backend measurements</span>
+              </div>
+              {projectFilesEnergyData.length ? (
+                <div className="chart" style={{ marginTop: '16px' }}>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={projectFilesEnergyData} margin={{ top: 10, right: 15, left: -10, bottom: 25 }}>
+                      <CartesianGrid vertical={false} stroke="#e7e4dd" strokeDasharray="3 3" />
+                      <XAxis
+                        dataKey="name"
+                        tick={{ fill: '#6d6a63', fontSize: 11 }}
+                        interval={0}
+                        angle={projectFilesEnergyData.length > 5 ? -25 : 0}
+                        textAnchor={projectFilesEnergyData.length > 5 ? 'end' : 'middle'}
+                      />
+                      <YAxis tick={{ fill: '#6d6a63', fontSize: 11 }} />
+                      <Tooltip
+                        cursor={{ fill: '#f3f1eb' }}
+                        formatter={(val: any, _name: any, item: any) => [
+                          `${fixed(val, 3)} Joules (${fixed(item?.payload?.energyKwh, 8)} kWh)`,
+                          'Energy Consumption'
+                        ]}
+                        labelFormatter={(_label, items) => items?.[0]?.payload?.relativePath || _label}
+                      />
+                      <Bar dataKey="energyJoules" name="Energy (J)" fill="#2f6b57" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : <ChartFallback title="No data available for this visualization" />}
+            </section>
+
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <p className="overline">CARBON IMPACT</p>
+                  <h3>Carbon Impact by File (gCO₂eq)</h3>
+                </div>
+                <span>Grid intensity: {fixed(carbonIntensityToDisplay, 1)} gCO₂eq/kWh</span>
+              </div>
+              {projectFilesCarbonData.length ? (
+                <div className="chart" style={{ marginTop: '16px' }}>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={projectFilesCarbonData} margin={{ top: 10, right: 15, left: -10, bottom: 25 }}>
+                      <CartesianGrid vertical={false} stroke="#e7e4dd" strokeDasharray="3 3" />
+                      <XAxis
+                        dataKey="name"
+                        tick={{ fill: '#6d6a63', fontSize: 11 }}
+                        interval={0}
+                        angle={projectFilesCarbonData.length > 5 ? -25 : 0}
+                        textAnchor={projectFilesCarbonData.length > 5 ? 'end' : 'middle'}
+                      />
+                      <YAxis tick={{ fill: '#6d6a63', fontSize: 11 }} />
+                      <Tooltip
+                        cursor={{ fill: '#f3f1eb' }}
+                        formatter={(val: any, _name: any, item: any) => [
+                          `${fixed(val, 5)} gCO₂eq (CIRS: ${fixed(item?.payload?.cirs, 6)})`,
+                          'Carbon Footprint'
+                        ]}
+                        labelFormatter={(_label, items) => items?.[0]?.payload?.relativePath || _label}
+                      />
+                      <Bar dataKey="carbonGrams" name="Carbon (gCO₂eq)" fill="#c38c3d" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : <ChartFallback title="No data available for this visualization" />}
+            </section>
+          </div>
+        </section>
+
+        {/* SECTION 2: CODE QUALITY & SUSTAINABILITY SCORES */}
+        <section className="chart-section">
+          <div className="chart-section-title">
+            <div>
+              <p className="overline">CODE QUALITY & SUSTAINABILITY INDEXES</p>
+              <h3>SCI, ESS & CIRS Metrics across Files</h3>
+            </div>
+            <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
+              {projectComplexitySummary.totalFunctions} functions · Max Nesting Depth {projectComplexitySummary.maxND} · Avg FD {fixed(projectComplexitySummary.avgFD, 3)}
+            </span>
+          </div>
+
+          <div className="chart-grid-3">
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <p className="overline">STRUCTURAL COMPLEXITY</p>
+                  <h3>SCI by File</h3>
+                </div>
+                <span>Index 0–1</span>
+              </div>
+              {projectFilesSciData.length ? (
+                <div className="chart" style={{ marginTop: '14px' }}>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={projectFilesSciData} margin={{ top: 10, right: 10, left: -20, bottom: 25 }}>
+                      <CartesianGrid vertical={false} stroke="#e7e4dd" strokeDasharray="3 3" />
+                      <XAxis dataKey="name" tick={{ fill: '#6d6a63', fontSize: 10 }} interval={0} angle={projectFilesSciData.length > 4 ? -25 : 0} textAnchor={projectFilesSciData.length > 4 ? 'end' : 'middle'} />
+                      <YAxis tick={{ fill: '#6d6a63', fontSize: 10 }} domain={[0, 1]} />
+                      <Tooltip cursor={{ fill: '#f3f1eb' }} formatter={(val: any) => [fixed(val, 4), 'SCI Score']} labelFormatter={(_label, items) => items?.[0]?.payload?.relativePath || _label} />
+                      <Bar dataKey="sci" fill="#2e6956" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : <ChartFallback title="No data available" />}
+            </section>
+
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <p className="overline">ENERGY SMELL SCORE</p>
+                  <h3>ESS by File</h3>
+                </div>
+                <span>Score out of 10</span>
+              </div>
+              {projectFilesEssData.length ? (
+                <div className="chart" style={{ marginTop: '14px' }}>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={projectFilesEssData} margin={{ top: 10, right: 10, left: -20, bottom: 25 }}>
+                      <CartesianGrid vertical={false} stroke="#e7e4dd" strokeDasharray="3 3" />
+                      <XAxis dataKey="name" tick={{ fill: '#6d6a63', fontSize: 10 }} interval={0} angle={projectFilesEssData.length > 4 ? -25 : 0} textAnchor={projectFilesEssData.length > 4 ? 'end' : 'middle'} />
+                      <YAxis tick={{ fill: '#6d6a63', fontSize: 10 }} domain={[0, 10]} />
+                      <Tooltip cursor={{ fill: '#f3f1eb' }} formatter={(val: any) => [fixed(val, 1), 'ESS Score']} labelFormatter={(_label, items) => items?.[0]?.payload?.relativePath || _label} />
+                      <Bar dataKey="ess" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : <ChartFallback title="No data available" />}
+            </section>
+
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <p className="overline">CARBON RISK SCORE</p>
+                  <h3>CIRS by File</h3>
+                </div>
+                <span>gCO₂eq/run</span>
+              </div>
+              {projectFilesCirsData.length ? (
+                <div className="chart" style={{ marginTop: '14px' }}>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={projectFilesCirsData} margin={{ top: 10, right: 10, left: -20, bottom: 25 }}>
+                      <CartesianGrid vertical={false} stroke="#e7e4dd" strokeDasharray="3 3" />
+                      <XAxis dataKey="name" tick={{ fill: '#6d6a63', fontSize: 10 }} interval={0} angle={projectFilesCirsData.length > 4 ? -25 : 0} textAnchor={projectFilesCirsData.length > 4 ? 'end' : 'middle'} />
+                      <YAxis tick={{ fill: '#6d6a63', fontSize: 10 }} />
+                      <Tooltip cursor={{ fill: '#f3f1eb' }} formatter={(val: any) => [fixed(val, 6), 'CIRS']} labelFormatter={(_label, items) => items?.[0]?.payload?.relativePath || _label} />
+                      <Bar dataKey="cirs" fill="#475569" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : <ChartFallback title="No data available" />}
+            </section>
+          </div>
+        </section>
+
+        {/* SECTION 3: FINDINGS & SEVERITY DISTRIBUTION */}
+        <section className="chart-section">
+          <div className="chart-section-title">
+            <div>
+              <p className="overline">ENERGY SMELL AUDIT</p>
+              <h3>Findings Distribution & Severity Breakdown</h3>
+            </div>
+            <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
+              Total {projectResult.total_findings} smells detected
+            </span>
+          </div>
+
+          <div className="chart-grid-2">
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <p className="overline">FINDINGS CATEGORIES</p>
+                  <h3>Smells Distribution by Category</h3>
+                </div>
+                <span>{projectCategoryDistributionData.length} categories active</span>
+              </div>
+              {projectCategoryDistributionData.length > 0 ? (
+                <div className="chart" style={{ marginTop: '14px' }}>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <PieChart>
+                      <Pie
+                        data={projectCategoryDistributionData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={55}
+                        outerRadius={85}
+                        paddingAngle={4}
+                        dataKey="count"
+                        nameKey="name"
+                      >
+                        {projectCategoryDistributionData.map((entry, index) => (
+                          <Cell key={`cat-${index}`} fill={CATEGORY_COLORS[entry.name] || '#2e6956'} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(val: any, name: any) => [`${val} smell(s)`, name]} />
+                      <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <ChartFallback title="No data available for this visualization" message="No findings were reported for any of the categories." />
+              )}
+            </section>
+
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <p className="overline">SEVERITY AUDIT</p>
+                  <h3>Findings by Severity</h3>
+                </div>
+                <span>Risk levels</span>
+              </div>
+              {projectSeverityDistribution.length > 0 ? (
+                <div className="chart" style={{ marginTop: '14px' }}>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <PieChart>
+                      <Pie
+                        data={projectSeverityDistribution}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={55}
+                        outerRadius={85}
+                        paddingAngle={4}
+                        dataKey="count"
+                        nameKey="name"
+                      >
+                        {projectSeverityDistribution.map((entry, index) => (
+                          <Cell key={`sev-${index}`} fill={entry.color || SEVERITY_COLORS[entry.name] || '#2e6956'} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(val: any, name: any) => [`${val} smell(s)`, name]} />
+                      <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <ChartFallback title="No data available for this visualization" message="No severity levels present in the findings data." />
+              )}
+            </section>
+          </div>
+        </section>
 
         <section className="panel project-files-panel" style={{ marginTop: '24px' }}>
           <div className="panel-head" style={{ alignItems: 'center' }}>
@@ -1128,7 +1516,7 @@ export default function App() {
         <div className="report-grid">
           <section className="panel">
             <div className="panel-head">
-              <div><p className="overline">PRIORITY SIGNALS</p><h3>What deserves attention</h3></div>
+              <div><p className="overline">PRIORITY SIGNALS</p><h3>Recommendation Priority Scores</h3></div>
               <span>{recommendations.length} recommendations</span>
             </div>
             {chart.length ? (
@@ -1149,16 +1537,87 @@ export default function App() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            ) : <p className="soft-copy">No energy smells were reported for this source.</p>}
+            ) : <ChartFallback title="No priority signals reported" message="No energy smells were reported for this file." />}
           </section>
 
+          <section className="panel">
+            <div className="panel-head">
+              <div><p className="overline">COMPLEXITY PROFILE</p><h3>Code Structure Metrics</h3></div>
+              <span>SLOC: {complexity.sloc}</span>
+            </div>
+            {singleFileComplexityData.length ? (
+              <div className="chart">
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={singleFileComplexityData} margin={{ top: 10, right: 15, left: -15, bottom: 0 }}>
+                    <CartesianGrid vertical={false} stroke="#e7e4dd" strokeDasharray="3 3" />
+                    <XAxis dataKey="name" tick={{ fill: '#6d6a63', fontSize: 11 }} />
+                    <YAxis tick={{ fill: '#6d6a63', fontSize: 11 }} />
+                    <Tooltip
+                      cursor={{ fill: '#f3f1eb' }}
+                      formatter={(val: any, _name: any, item: any) => [
+                        `${item?.payload?.rawValue || val} (${item?.payload?.unit})`,
+                        item?.payload?.full || item?.payload?.name
+                      ]}
+                    />
+                    <Bar dataKey="value" fill="#2f6b57" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : <ChartFallback title="No complexity metrics available" />}
+          </section>
+        </div>
+
+        {/* CARBON / ENERGY SUMMARY & REFACTOR COMPARISON */}
+        <div className="report-grid" style={{ marginTop: '18px' }}>
           <section className="panel carbon-panel">
-            <p className="overline">GRID CONTEXT</p>
+            <p className="overline">CARBON / ENERGY SUMMARY</p>
             <h3>{display(carbon.zone?.display_name, currentZone?.display_name)}</h3>
             <div className="intensity"><strong>{fixed(carbonIntensityToDisplay, 2)}</strong><span>gCO₂eq/kWh</span></div>
-            <p className="soft-copy">Your code’s footprint depends on both the work it performs and the electricity behind it.</p>
+            <p className="soft-copy">
+              Single-run footprint: {fixed(((energy.energy_joules || 0) / 3600000.0) * carbonIntensityToDisplay, 6)} gCO₂eq ({fixed(energy.energy_joules, 3)} Joules consumed).
+            </p>
             <button className="text-button" onClick={() => setView('schedule')}>Explore better execution times <ArrowRight size={15} /></button>
           </section>
+
+          {singleFileRefactorComparisonData.length > 0 ? (
+            <section className="panel">
+              <div className="panel-head">
+                <div><p className="overline">POST-REFACTOR COMPARISON</p><h3>Metrics Before vs After AST Refactor</h3></div>
+                <span>Safe transformation</span>
+              </div>
+              <div className="chart">
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={singleFileRefactorComparisonData} margin={{ top: 10, right: 15, left: -15, bottom: 0 }}>
+                    <CartesianGrid vertical={false} stroke="#e7e4dd" strokeDasharray="3 3" />
+                    <XAxis dataKey="name" tick={{ fill: '#6d6a63', fontSize: 11 }} />
+                    <YAxis tick={{ fill: '#6d6a63', fontSize: 11 }} />
+                    <Tooltip cursor={{ fill: '#f3f1eb' }} />
+                    <Legend />
+                    <Bar dataKey="Before" fill="#c38c3d" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="After" fill="#2f6b57" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </section>
+          ) : (
+            <section className="panel">
+              <div className="panel-head">
+                <div><p className="overline">RESEARCH METRICS</p><h3>CIRS & ESS Ratings</h3></div>
+              </div>
+              <div style={{ padding: '16px 0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ background: 'var(--paper)', padding: '14px', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                  <p style={{ margin: 0, fontSize: '11px', color: 'var(--muted)' }}>Energy Smell Score (ESS)</p>
+                  <strong style={{ fontSize: '24px', color: 'var(--ink)', display: 'block', marginTop: '4px' }}>{fixed(metrics?.energy_smell_score, 1)} / 10</strong>
+                  <span style={{ fontSize: '10px', color: 'var(--muted)' }}>Version: {metrics?.ess_version || '1.0.0'}</span>
+                </div>
+                <div style={{ background: 'var(--paper)', padding: '14px', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                  <p style={{ margin: 0, fontSize: '11px', color: 'var(--muted)' }}>Carbon Risk Score (CIRS)</p>
+                  <strong style={{ fontSize: '20px', color: 'var(--forest)', display: 'block', marginTop: '4px' }}>{fixed(metrics?.carbon_impact_risk_score, 6)}</strong>
+                  <span style={{ fontSize: '10px', color: 'var(--muted)' }}>gCO₂eq / run</span>
+                </div>
+              </div>
+            </section>
+          )}
         </div>
       </section>}
 
@@ -1430,9 +1889,10 @@ export default function App() {
             </div>
             <label className="compact-select">
               <Globe2 size={16} />
-              <select value={zone} onChange={e => setZone(e.target.value)}>
-                {zones.map(z => <option key={z.key} value={z.key}>{z.display_name || z.key}</option>)}
+              <select value={zone} onChange={e => setZone(e.target.value)} aria-label="Select electricity grid country/region">
+                {zones.map(z => <option key={z.key} value={z.key}>{z.display_name || z.key} ({z.key})</option>)}
               </select>
+              <ChevronDown size={14} className="select-arrow" />
             </label>
           </div>
 
@@ -1590,17 +2050,19 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
         <div className="panel-head">
           <div>
             <p className="overline">24-HOUR CARBON INTENSITY FORECAST</p>
-            <h3>Grid Intensity Curve (gCO₂eq/kWh)</h3>
+            <h3>Regional Grid Carbon Intensity Forecast (gCO₂eq/kWh)</h3>
           </div>
-          <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{hourly.length} hourly forecast points</span>
+          <span style={{ fontSize: '12px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
+            {hourly.length} forecast points
+          </span>
         </div>
 
         <div className="chart" style={{ marginTop: '16px' }}>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-              <CartesianGrid vertical={false} stroke="#e7e4dd" />
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={chartData} margin={{ top: 20, right: 15, left: -15, bottom: 10 }}>
+              <CartesianGrid vertical={false} stroke="#e7e4dd" strokeDasharray="3 3" />
               <XAxis dataKey="time" tick={{ fill: '#6d6a63', fontSize: 11 }} />
-              <YAxis tick={{ fill: '#6d6a63', fontSize: 11 }} domain={['dataMin - 20', 'dataMax + 20']} />
+              <YAxis tick={{ fill: '#6d6a63', fontSize: 11 }} domain={['dataMin - 10', 'dataMax + 10']} />
               <Tooltip
                 cursor={{ fill: '#f3f1eb' }}
                 formatter={(val: any, _name: any, item: any) => [
@@ -1612,13 +2074,36 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
                   return ts ? formatWindowTime(ts) : String(label || '');
                 }}
               />
-              <Bar
-                dataKey="intensity"
-                fill="#2f6b57"
-                radius={[4, 4, 0, 0]}
-              />
+              {forecast.current_carbon_intensity && (
+                <ReferenceLine
+                  y={forecast.current_carbon_intensity}
+                  stroke="#ef4444"
+                  strokeDasharray="4 4"
+                  label={{ value: `Current (${fixed(forecast.current_carbon_intensity, 1)})`, fill: '#ef4444', fontSize: 10, position: 'top' }}
+                />
+              )}
+              <Bar dataKey="intensity" name="Grid Intensity" radius={[4, 4, 0, 0]}>
+                {chartData.map((entry: any, index: number) => (
+                  <Cell key={`cell-${index}`} fill={entry.isOptimal ? '#10b981' : '#2f6b57'} />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
+        </div>
+
+        <div className="legend-custom-wrap">
+          <div className="legend-custom-item">
+            <span className="legend-custom-dot" style={{ background: '#10b981' }}></span>
+            <span>Recommended Green Window</span>
+          </div>
+          <div className="legend-custom-item">
+            <span className="legend-custom-dot" style={{ background: '#2f6b57' }}></span>
+            <span>24h Regional Grid Forecast</span>
+          </div>
+          <div className="legend-custom-item">
+            <span className="legend-custom-dot" style={{ background: '#ef4444' }}></span>
+            <span>Current Grid Intensity Reference</span>
+          </div>
         </div>
       </section>
     </div>
