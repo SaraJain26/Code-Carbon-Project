@@ -8,20 +8,24 @@ import os
 import shutil
 import tempfile
 import math
-from pathlib import Path
-from datetime import datetime, timezone
-import logging
+import sys
 import time
 import zipfile
 import io
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+
+_SRC_DIR = Path(__file__).resolve().parent.parent
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
 
 logger = logging.getLogger("codecarbon.api")
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, APIRouter
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-
 from carbon import get_carbon_provider
 from pipeline import PredictivePipeline
 from recommendation.engine import RecommendationEngine
@@ -381,6 +385,7 @@ async def analyze_file(
 
 
 @router.post("/analyze-project", response_model=ProjectAnalyzeResponse, tags=["Analysis"])
+@router.post("/analyze-zip", response_model=ProjectAnalyzeResponse, tags=["Analysis"])
 async def analyze_project(
     files: list[UploadFile] = File(None),
     file: UploadFile = File(None),
@@ -642,4 +647,11 @@ def get_forecast(
 # Register router for both root paths and /api prefix paths
 app.include_router(router)
 app.include_router(router, prefix="/api")
+
+# Mount static frontend files if dashboard/dist exists
+dashboard_dist = Path(__file__).resolve().parent.parent.parent / "dashboard" / "dist"
+if dashboard_dist.exists():
+    from fastapi.staticfiles import StaticFiles
+    app.mount("/", StaticFiles(directory=str(dashboard_dist), html=True), name="static")
+
 
