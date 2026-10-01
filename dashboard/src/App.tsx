@@ -36,7 +36,9 @@ import mammoth from 'mammoth';
 import JSZip from 'jszip';
 import './App.css';
 
-const API = import.meta.env.VITE_API_URL || '/api';
+const API = import.meta.env.DEV
+  ? (import.meta.env.VITE_API_URL || '/api')
+  : 'https://code-carbon-project.onrender.com/api';
 type View = 'workspace' | 'results' | 'recommendations' | 'impact' | 'schedule' | 'project';
 const samples = [
   { label: 'Heavy workload', file: 'sample_heavy_workload.py', code: `def process(items):\n    output = []\n    for item in items:\n        factor = (42 * 3.14159) ** 2\n        output.append(item * factor)\n    return output\n\nprocess(range(200000))` },

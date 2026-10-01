@@ -586,38 +586,9 @@ def get_forecast(
             energy=EnergyEstimate(energy_joules=energy_joules)
         )
 
-        try:
-            forecasts = pipeline._carbon_engine.forecast(dummy_energy, zone=zone)
-            if not forecasts:
-                raise ValueError("Empty forecast data")
-        except Exception:
-            # Fallback mock forecast data if API key / forecast endpoint unavailable
-            now = datetime.now(timezone.utc)
-            from carbon.models import CarbonResult, CarbonIntensityData, ZoneData, CarbonData
-            forecasts = []
-            base_ci = 250.0
-            import math
-            for i in range(24):
-                time_offset = now.replace(minute=0, second=0, microsecond=0)
-                from datetime import timedelta
-                ts = time_offset + timedelta(hours=i)
-                ci = max(40.0, base_ci + math.sin(i * 0.5) * 120.0 + (i % 3) * 15)
-                c_data = CarbonIntensityData(
-                    zone=ZoneData(zone_key=zone, zone_name=zone, display_name=zone, country_name=zone, country_code="XX"),
-                    carbon_intensity=ci,
-                    timestamp=ts,
-                    emission_factor_type="Forecast",
-                    is_estimated=True,
-                    estimation_method="Model",
-                    source="ElectricityMaps"
-                )
-                c_res = CarbonResult(
-                    energy=dummy_energy,
-                    carbon=CarbonData(carbon_grams=(energy_joules / 3600000) * ci, carbon_intensity=ci, confidence=1.0, is_estimated=True),
-                    carbon_data=c_data,
-                    fallback_used=False
-                )
-                forecasts.append(c_res)
+        forecasts = pipeline._carbon_engine.forecast(dummy_energy, zone=zone)
+        if not forecasts:
+            raise ValueError("Forecast provider returned no data")
 
         current = forecasts[0]
         best = pipeline._carbon_engine.best_execution_window(forecasts)
@@ -653,5 +624,4 @@ dashboard_dist = Path(__file__).resolve().parent.parent.parent / "dashboard" / "
 if dashboard_dist.exists():
     from fastapi.staticfiles import StaticFiles
     app.mount("/", StaticFiles(directory=str(dashboard_dist), html=True), name="static")
-
 
