@@ -36,9 +36,8 @@ import mammoth from 'mammoth';
 import JSZip from 'jszip';
 import './App.css';
 
-const API = import.meta.env.DEV
-  ? (import.meta.env.VITE_API_URL || '/api')
-  : 'https://code-carbon-project.onrender.com/api';
+const rawApiUrl = (import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : 'https://code-carbon-projectuvicorn-api-main-app.onrender.com/api')).trim().replace(/\/+$/, '');
+const API = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl}/api`;
 
 async function readApiJson<T>(response: Response, requestUrl: string): Promise<T> {
   const contentType = response.headers.get('content-type') || '(none)';
