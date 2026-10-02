@@ -39,6 +39,48 @@ import './App.css';
 const API = import.meta.env.DEV
   ? (import.meta.env.VITE_API_URL || '/api')
   : 'https://code-carbon-project.onrender.com/api';
+
+async function readApiJson<T>(response: Response, requestUrl: string): Promise<T> {
+  const contentType = response.headers.get('content-type') || '(none)';
+  const rawBody = await response.text();
+  const bodyEmpty = rawBody.trim().length === 0;
+  const isHtml = /text\/html/i.test(contentType) || /^\s*<(?:!doctype\s+html|html\b)/i.test(rawBody);
+  let parsed: T | undefined;
+  let parseError: string | undefined;
+
+  if (!bodyEmpty) {
+    try {
+      parsed = JSON.parse(rawBody) as T;
+    } catch (error) {
+      parseError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  if (!response.ok || bodyEmpty || parseError) {
+    console.error('[Code-Carbon] Invalid API response', {
+      url: requestUrl,
+      status: response.status,
+      contentType,
+      bodyEmpty,
+      isHtml,
+      body: rawBody.slice(0, 2000),
+      parseError
+    });
+
+    if (!response.ok) {
+      const detail = (parsed as any)?.detail;
+      throw new Error(detail
+        ? `API request failed: HTTP ${response.status}: ${detail}`
+        : `API request failed: HTTP ${response.status}`);
+    }
+    if (bodyEmpty) throw new Error(`API request failed: HTTP ${response.status} (empty response)`);
+    if (isHtml) throw new Error(`API request failed: HTTP ${response.status} (received HTML instead of JSON)`);
+    throw new Error(`API request failed: HTTP ${response.status} (invalid JSON response)`);
+  }
+
+  return parsed as T;
+}
+
 type View = 'workspace' | 'results' | 'recommendations' | 'impact' | 'schedule' | 'project';
 const samples = [
   { label: 'Heavy workload', file: 'sample_heavy_workload.py', code: `def process(items):\n    output = []\n    for item in items:\n        factor = (42 * 3.14159) ** 2\n        output.append(item * factor)\n    return output\n\nprocess(range(200000))` },
@@ -210,11 +252,18 @@ export default function App() {
 
   useEffect(() => { (async () => {
     try {
-      const [h, z] = await Promise.all([fetch(`${API}/health`), fetch(`${API}/zones`)]);
-      setHealth(h.ok ? 'healthy' : 'fallback');
-      if (!z.ok) throw new Error();
-      const data = await z.json(); setZones(Object.entries(data).map(([key, item]) => ({ key, ...(item as object) })));
-    } catch { setHealth('fallback'); setZones([{ key: 'IN', display_name: 'India National Grid', country_name: 'India', carbon_intensity: 435 }, { key: 'FR', display_name: 'France Grid', country_name: 'France', carbon_intensity: 50 }, { key: 'DK-DK1', display_name: 'Denmark West', country_name: 'Denmark', carbon_intensity: 150 }, { key: 'GLOBAL', display_name: 'Global average', country_name: 'Global', carbon_intensity: 435 }]); }
+      const healthUrl = `${API}/health`;
+      const zonesUrl = `${API}/zones`;
+      const [healthResponse, zonesResponse] = await Promise.all([fetch(healthUrl), fetch(zonesUrl)]);
+      await readApiJson<{ status: string }>(healthResponse, healthUrl);
+      const data = await readApiJson<Record<string, unknown>>(zonesResponse, zonesUrl);
+      setHealth('healthy');
+      setZones(Object.entries(data).map(([key, item]) => ({ key, ...(item as object) })));
+    } catch (error) {
+      setHealth('fallback');
+      setNotice(error instanceof Error ? error.message : 'API request failed before a response was received.');
+      setZones([{ key: 'IN', display_name: 'India National Grid', country_name: 'India', carbon_intensity: 435 }, { key: 'FR', display_name: 'France Grid', country_name: 'France', carbon_intensity: 50 }, { key: 'DK-DK1', display_name: 'Denmark West', country_name: 'Denmark', carbon_intensity: 150 }, { key: 'GLOBAL', display_name: 'Global average', country_name: 'Global', carbon_intensity: 435 }]);
+    }
   })(); }, []);
 
   useEffect(() => {
@@ -223,23 +272,18 @@ export default function App() {
       const targetJoules = (analysisMode === 'project' && projectResult)
         ? (projectResult.total_energy_joules || 100.0)
         : (fileJoules || 100.0);
+      const forecastUrl = `${API}/forecast?zone=${encodeURIComponent(zone)}&energy_joules=${targetJoules}`;
       setForecastLoading(true);
       setForecastError(null);
-      fetch(`${API}/forecast?zone=${encodeURIComponent(zone)}&energy_joules=${targetJoules}`)
-        .then(async r => {
-          if (r.ok) {
-            setForecast(await r.json());
-            setForecastError(null);
-          } else {
-            const body = await r.json().catch(() => ({}));
-            setForecast(null);
-            setForecastError(body.detail || `Server returned HTTP ${r.status}`);
-          }
+      fetch(forecastUrl)
+        .then(async response => {
+          setForecast(await readApiJson(response, forecastUrl));
+          setForecastError(null);
         })
         .catch((err) => {
           console.error('[Code-Carbon] Forecast fetch error:', err);
           setForecast(null);
-          setForecastError('Backend service is unreachable. Please ensure the Code-Carbon API server (uvicorn on port 8000) is running.');
+          setForecastError(err instanceof Error ? err.message : 'API request failed before a response was received.');
         })
         .finally(() => {
           setForecastLoading(false);
@@ -568,9 +612,9 @@ export default function App() {
       form.append('file', new File([code], filename.endsWith('.py') ? filename : `${filename}.py`, { type: 'text/x-python' }));
       form.append('zone', zone);
       form.append('use_global_average', String(globalAverage));
-      const response = await fetch(`${API}/analyze`, { method: 'POST', body: form });
-      if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.detail || 'The analysis service could not process this file.'); }
-      setResult(await response.json());
+      const requestUrl = `${API}/analyze`;
+      const response = await fetch(requestUrl, { method: 'POST', body: form });
+      setResult(await readApiJson<AnalyzeResponse>(response, requestUrl));
       setAnalysisMode('file');
       setView('results');
     } catch (err: any) { setNotice(err.message || 'Analysis could not be completed.'); } finally { setLoading(false); }
@@ -671,13 +715,10 @@ export default function App() {
       form.append('file', fileToUpload);
       form.append('zone', zone);
       form.append('use_global_average', String(globalAverage));
-      console.log(`[Code-Carbon] Sending POST /analyze-project payload...`);
-      const response = await fetch(`${API}/analyze-project`, { method: 'POST', body: form });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.detail || `Project analysis service returned HTTP ${response.status}`);
-      }
-      const projData = await response.json();
+      const requestUrl = `${API}/analyze-project`;
+      console.log(`[Code-Carbon] Sending POST ${requestUrl} payload...`);
+      const response = await fetch(requestUrl, { method: 'POST', body: form });
+      const projData = await readApiJson<ProjectAnalyzeResponse>(response, requestUrl);
       console.log(`[Code-Carbon] Project analysis complete:`, projData);
       setProjectResult(projData);
       setAnalysisMode('project');
