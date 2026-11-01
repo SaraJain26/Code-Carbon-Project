@@ -67,7 +67,15 @@ async function readApiJson<T>(response: Response, requestUrl: string): Promise<T
     });
 
     if (!response.ok) {
-      const detail = (parsed as any)?.detail;
+      const rawDetail = (parsed as any)?.detail;
+      let detail = '';
+      if (typeof rawDetail === 'string') {
+        detail = rawDetail;
+      } else if (Array.isArray(rawDetail)) {
+        detail = rawDetail.map(d => typeof d === 'string' ? d : (d?.msg || JSON.stringify(d))).join('; ');
+      } else if (rawDetail && typeof rawDetail === 'object') {
+        detail = (rawDetail as any).msg || JSON.stringify(rawDetail);
+      }
       throw new Error(detail
         ? `API request failed: HTTP ${response.status}: ${detail}`
         : `API request failed: HTTP ${response.status}`);
@@ -228,6 +236,7 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [code, setCode] = useState('');
   const [filename, setFilename] = useState('untitled.py');
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [globalAverage, setGlobalAverage] = useState(true);
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [projectResult, setProjectResult] = useState<ProjectAnalyzeResponse | null>(null);
@@ -597,31 +606,87 @@ export default function App() {
   }, [projectResult]);
 
   const readFile = async (file: File) => {
-    setNotice(null); setExtracting(true);
+    setNotice(null);
+    setExtracting(true);
     try {
+      const lowerName = file.name.toLowerCase();
+      const isPy = lowerName.endsWith('.py');
+      const isTxt = lowerName.endsWith('.txt');
+      const isPdf = lowerName.endsWith('.pdf');
+      const isDocx = lowerName.endsWith('.docx');
+
+      if (!isPy && !isTxt && !isPdf && !isDocx) {
+        throw new Error(`Unsupported file type "${file.name}". Please upload a Python (.py) source file.`);
+      }
+
       let text: string;
-      if (/\.pdf$/i.test(file.name)) { pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'; const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise; const pages = await Promise.all(Array.from({ length: pdf.numPages }, async (_, i) => ((await (await pdf.getPage(i + 1)).getTextContent()).items as any[]).map(v => v.str || '').join(' '))); text = pages.join('\n'); }
-      else if (/\.docx$/i.test(file.name)) text = (await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })).value;
-      else text = await file.text();
-      if (!text.trim()) throw new Error('No readable code was found in this file.');
-      setCode(text); setFilename(file.name.replace(/\.(pdf|docx|txt)$/i, '.py'));
-    } catch (err: any) { setNotice(err.message || 'Unable to read that file.'); } finally { setExtracting(false); }
+      if (isPdf) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+        const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+        const pages = await Promise.all(
+          Array.from({ length: pdf.numPages }, async (_, i) =>
+            ((await (await pdf.getPage(i + 1)).getTextContent()).items as any[]).map(v => v.str || '').join(' ')
+          )
+        );
+        text = pages.join('\n');
+      } else if (isDocx) {
+        text = (await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })).value;
+      } else {
+        text = await file.text();
+      }
+
+      if (!text.trim()) {
+        throw new Error(`File "${file.name}" is empty. No readable code was found.`);
+      }
+
+      setCode(text);
+      setFilename(file.name);
+      setUploadedFile(file);
+    } catch (err: any) {
+      console.error('[Code-Carbon] File read error:', err);
+      setNotice(err.message || 'Unable to read that file.');
+    } finally {
+      setExtracting(false);
+    }
   };
 
   const analyze = async () => {
-    if (!code.trim()) return setNotice('Paste code, choose an example, or upload a file before running an analysis.');
-    setLoading(true); setNotice(null);
+    if (!code.trim()) {
+      return setNotice('Please upload a Python (.py) file, select a sample preset, or paste code before running an analysis.');
+    }
+    if (extracting) {
+      return setNotice('Reading uploaded file, please wait a moment...');
+    }
+    setLoading(true);
+    setNotice(null);
     try {
       const form = new FormData();
-      form.append('file', new File([code], filename.endsWith('.py') ? filename : `${filename}.py`, { type: 'text/x-python' }));
+      const finalFilename = filename.toLowerCase().endsWith('.py') ? filename : `${filename}.py`;
+      const fileToSend = (uploadedFile && uploadedFile.name === filename)
+        ? uploadedFile
+        : new File([code], finalFilename, { type: 'text/x-python' });
+      form.append('file', fileToSend);
       form.append('zone', zone);
       form.append('use_global_average', String(globalAverage));
       const requestUrl = `${API}/analyze`;
+      console.log(`[Code-Carbon] Sending POST ${requestUrl} payload:`, { filename: fileToSend.name, zone, globalAverage });
       const response = await fetch(requestUrl, { method: 'POST', body: form });
-      setResult(await readApiJson<AnalyzeResponse>(response, requestUrl));
+      const data = await readApiJson<AnalyzeResponse>(response, requestUrl);
+      console.log('[Code-Carbon] Analysis response received:', data);
+      setResult(data);
       setAnalysisMode('file');
-      setView('results');
-    } catch (err: any) { setNotice(err.message || 'Analysis could not be completed.'); } finally { setLoading(false); }
+      navigateView('results');
+    } catch (err: any) {
+      console.error('[Code-Carbon] File analysis failed:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed')) {
+        setNotice('Cannot connect to the Code-Carbon backend service. Please ensure the API server is running on http://127.0.0.1:8000.');
+      } else {
+        setNotice(msg || 'Analysis could not be completed.');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const scanDataTransferItems = async (items: DataTransferItemList): Promise<ScannedFile[]> => {
@@ -693,7 +758,7 @@ export default function App() {
     const summaryToUse = overrideSummary !== undefined ? overrideSummary : projectSummary;
 
     if (!zipToUpload && (!filesToUpload || filesToUpload.length === 0)) {
-      return setNotice('Select a folder of .py files or a .zip archive before running project analysis.');
+      return setNotice('Please select a folder of .py files or a .zip archive before running project analysis.');
     }
     setLoading(true); setNotice(null);
     try {
@@ -726,10 +791,15 @@ export default function App() {
       console.log(`[Code-Carbon] Project analysis complete:`, projData);
       setProjectResult(projData);
       setAnalysisMode('project');
-      setView('project');
+      navigateView('project');
     } catch (err: any) {
       console.error('[Code-Carbon] Project analysis failed:', err);
-      setNotice(err.message || 'Project analysis could not be completed.');
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed')) {
+        setNotice('Cannot connect to the Code-Carbon backend service. Please ensure the API server is running on http://127.0.0.1:8000.');
+      } else {
+        setNotice(msg || 'Project analysis could not be completed.');
+      }
     } finally {
       setLoading(false);
     }
@@ -981,16 +1051,55 @@ export default function App() {
 
           {analysisMode === 'file' ? (
             <div className="source-grid">
-              <div className={`drop-zone ${dragging ? 'is-dragging' : ''}`} onDragEnter={e => { e.preventDefault(); setDragging(true); }} onDragOver={e => e.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={e => { e.preventDefault(); setDragging(false); if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]); }} onClick={() => fileInput.current?.click()} role="button" tabIndex={0} onKeyDown={e => e.key === 'Enter' && fileInput.current?.click()}>
-                <input ref={fileInput} type="file" accept=".py,.txt,.pdf,.docx" onChange={e => e.target.files?.[0] && readFile(e.target.files[0])} />
-                <span className="upload-icon"><Upload size={21} /></span>
-                <strong>{extracting ? 'Reading your file…' : 'Drop a file here'}</strong>
-                <p>or browse for Python, TXT, PDF, or DOCX</p>
+              <div
+                className={`drop-zone ${dragging ? 'is-dragging' : ''} ${uploadedFile || (code.trim() && filename !== 'untitled.py') ? 'has-file' : ''}`}
+                onDragEnter={e => { e.preventDefault(); setDragging(true); }}
+                onDragOver={e => e.preventDefault()}
+                onDragLeave={() => setDragging(false)}
+                onDrop={e => {
+                  e.preventDefault();
+                  setDragging(false);
+                  if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]);
+                }}
+                onClick={() => fileInput.current?.click()}
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => e.key === 'Enter' && fileInput.current?.click()}
+              >
+                <input
+                  ref={fileInput}
+                  type="file"
+                  accept=".py,.txt,.pdf,.docx"
+                  style={{ display: 'none' }}
+                  onChange={e => {
+                    if (e.target.files?.[0]) readFile(e.target.files[0]);
+                    e.target.value = '';
+                  }}
+                />
+                <span className="upload-icon">
+                  {uploadedFile || (code.trim() && filename !== 'untitled.py') ? <FileCode2 size={24} /> : <Upload size={21} />}
+                </span>
+                <strong>
+                  {extracting
+                    ? 'Reading your file…'
+                    : uploadedFile
+                    ? `File loaded: ${uploadedFile.name}`
+                    : (code.trim() && filename !== 'untitled.py')
+                    ? `File loaded: ${filename}`
+                    : 'Drop a file here'}
+                </strong>
+                <p>
+                  {uploadedFile
+                    ? `${(uploadedFile.size / 1024).toFixed(1)} KB · Click or drop another file to replace`
+                    : (code.trim() && filename !== 'untitled.py')
+                    ? `${code.split('\n').length} lines of code ready for analysis · Click to replace`
+                    : 'or browse for Python, TXT, PDF, or DOCX'}
+                </p>
               </div>
               <div className="editor-wrap">
                 <div className="editor-toolbar">
                   <span><span className="editor-dot" />{filename}</span>
-                  <div>{samples.map(s => <button key={s.file} onClick={() => { setCode(s.code); setFilename(s.file); }}>{s.label}</button>)}</div>
+                  <div>{samples.map(s => <button key={s.file} onClick={() => { setCode(s.code); setFilename(s.file); setUploadedFile(null); setNotice(null); }}>{s.label}</button>)}</div>
                 </div>
                 <textarea value={code} onChange={e => setCode(e.target.value)} spellCheck="false" placeholder="# Paste a Python script here…" aria-label="Python code" />
               </div>
@@ -1075,19 +1184,45 @@ export default function App() {
             </div>
           )}
 
+          {loading && (
+            <div className="analysis-loading-banner" role="status" aria-live="polite">
+              <LoaderCircle className="spin" size={24} />
+              <div>
+                <strong>
+                  {analysisMode === 'project'
+                    ? 'Analyzing multi-file Python project…'
+                    : `Analyzing ${filename || 'Python source file'}…`}
+                </strong>
+                <p>
+                  Executing AST parsing, EKB smell detection, carbon intensity estimation, and empirical runtime profiling. This may take a few seconds…
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="analysis-footer">
             <div>
               <label className="switch"><input type="checkbox" checked={globalAverage} onChange={e => setGlobalAverage(e.target.checked)} /><span /><b>Use global average</b></label>
               <p>Use this when your execution region is unknown.</p>
             </div>
             {analysisMode === 'file' ? (
-              <button className="primary-button" disabled={loading || extracting || !code.trim()} onClick={analyze}>
+              <button
+                className="primary-button analyze-btn"
+                disabled={loading}
+                onClick={analyze}
+                title="Run Code-Carbon analysis"
+              >
                 {loading ? <LoaderCircle className="spin" size={18} /> : <Play size={17} fill="currentColor" />}
-                {loading ? 'Measuring code…' : 'Run file analysis'}
+                {loading ? 'Analyzing code…' : 'Analyze'}
                 <ArrowRight size={17} />
               </button>
             ) : (
-              <button className="primary-button" disabled={loading || (!projectZipFile && projectFiles.length === 0)} onClick={() => runProjectAnalysis()}>
+              <button
+                className="primary-button analyze-btn"
+                disabled={loading}
+                onClick={() => runProjectAnalysis()}
+                title="Run Code-Carbon project analysis"
+              >
                 {loading ? <LoaderCircle className="spin" size={18} /> : <FolderArchive size={17} />}
                 {loading ? (projectFiles.length > 0 ? 'Packing & analyzing project…' : 'Analyzing project…') : 'Analyze project'}
                 <ArrowRight size={17} />

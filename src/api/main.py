@@ -441,7 +441,7 @@ async def analyze_file(
     """
     Upload a Python source file to execute static analysis, carbon estimation, AST transformation, and sandboxed measurement.
     """
-    if not file.filename or not file.filename.endswith(".py"):
+    if not file.filename or not file.filename.lower().endswith(".py"):
         raise HTTPException(status_code=400, detail="Only Python (.py) source files are supported.")
 
     content_bytes = await file.read()
@@ -481,7 +481,7 @@ async def analyze_project(
     if file is not None and file.filename:
         project_name = file.filename
         content_bytes = await file.read()
-        if file.filename.endswith(".zip"):
+        if file.filename.lower().endswith(".zip"):
             try:
                 with zipfile.ZipFile(io.BytesIO(content_bytes)) as zf:
                     for zip_info in zf.infolist():
@@ -491,19 +491,19 @@ async def analyze_project(
                         parts = Path(name).parts
                         if any(p.startswith(".") or p in ("__pycache__", "venv", "env", "node_modules", "dist", "build", ".pytest_cache") for p in parts):
                             continue
-                        if name.endswith(".py"):
+                        if name.lower().endswith(".py"):
                             file_data = zf.read(zip_info)
                             items_to_analyze.append((name, file_data))
             except Exception as e:
                 raise HTTPException(status_code=400, detail=f"Failed to extract ZIP archive: {str(e)}")
-        elif file.filename.endswith(".py"):
+        elif file.filename.lower().endswith(".py"):
             items_to_analyze.append((file.filename, content_bytes))
         else:
             raise HTTPException(status_code=400, detail="Uploaded file must be a .zip archive or a .py source file.")
 
     if files:
         for f in files:
-            if f.filename and f.filename.endswith(".py"):
+            if f.filename and f.filename.lower().endswith(".py"):
                 c_bytes = await f.read()
                 clean_path = f.filename.replace("\\", "/")
                 items_to_analyze.append((clean_path, c_bytes))
