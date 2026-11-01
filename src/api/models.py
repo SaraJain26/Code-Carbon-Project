@@ -67,6 +67,10 @@ class PostRefactorEstimation(BaseModel):
     structural_changes_summary: list[str] = Field(default_factory=list, description="Summary of traceable structural changes")
     measured_runtime: dict[str, Any] = Field(default_factory=dict, description="Detailed empirical sandboxed runtime comparison")
     carbon_metadata: CarbonMetadataDetail = Field(..., description="Metadata on carbon grid intensity lookup")
+    smells_before: int = Field(0, description="Count of findings with confidence >= 0.5 before refactor")
+    smells_after: int = Field(0, description="Count of findings with confidence >= 0.5 after refactor")
+    smell_burden_before: float = Field(0.0, description="Sum of finding confidences before refactor")
+    smell_burden_after: float = Field(0.0, description="Sum of finding confidences after refactor")
 
 
 class AnalyzeResponse(BaseModel):

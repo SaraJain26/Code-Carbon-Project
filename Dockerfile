@@ -29,17 +29,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy the project files needed to install the python application
 # Note: .dockerignore guarantees that secret .env is NOT copied
-COPY pyproject.toml requirements.txt ./
+COPY pyproject.toml requirements.txt README.md ./
 
 # Install python dependencies including fastapi and uvicorn explicitly
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir fastapi uvicorn python-multipart httpx && \
-    pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir .
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy the backend source code
 # We explicitly copy only the src/ directory, ensuring .env is never copied
 COPY src/ ./src/
+
+# Install the project without installing dependencies again now that src/ exists
+RUN pip install --no-cache-dir --no-deps .
 
 # Copy the built static frontend files from Stage 1
 COPY --from=frontend-builder /app/dashboard/dist ./dashboard/dist
@@ -53,7 +55,7 @@ ENV PYTHONUNBUFFERED=1
 
 # Run readiness healthcheck
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD-SHELL curl -f "http://localhost:${PORT:-8000}/health" || exit 1
+  CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
 # Start the FastAPI server using Uvicorn
 CMD ["sh", "-c", "exec uvicorn src.api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

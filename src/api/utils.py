@@ -4,6 +4,7 @@ API serialization utilities.
 
 from __future__ import annotations
 
+import ast
 import dataclasses
 from enum import Enum
 from pathlib import Path
@@ -19,7 +20,7 @@ def serialize_value(obj: Any) -> Any:
     Recursively serialize dataclasses, enums, paths, and complex structures
     to standard JSON types.
     """
-    if obj is None:
+    if obj is None or isinstance(obj, ast.AST):
         return None
     elif isinstance(obj, (int, float, str, bool)):
         return obj

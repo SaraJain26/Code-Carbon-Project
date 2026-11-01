@@ -10,9 +10,8 @@ from knowledge import RuleLoader, RuleRepository
 
 
 FIXTURES = (
-    Path(__file__).resolve().parents[1]
-    / "examples"
-    / "benchmarks"
+    Path(__file__).resolve().parent
+    / "fixtures"
 )
 
 
@@ -21,7 +20,7 @@ class DetectorRegistryTest(unittest.TestCase):
     def test_registry_executes_all_detectors(self):
 
         result = StaticAnalysisEngine().analyze_file(
-            FIXTURES / "async_network.py"
+            FIXTURES / "async_blocking_network.py"
         )
 
         context = DetectionContext(

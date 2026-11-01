@@ -23,10 +23,11 @@ if str(_SRC_DIR) not in sys.path:
 
 logger = logging.getLogger("codecarbon.api")
 
+import ast
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, APIRouter
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from carbon import get_carbon_provider
+from carbon import get_carbon_provider, MockCarbonIntensityProvider
 from pipeline import PredictivePipeline
 from recommendation.engine import RecommendationEngine
 from recommendation.transformer import ASTCodeTransformer
@@ -101,7 +102,11 @@ def get_zones() -> dict[str, Any]:
         zones = client.get_all_zones()
         return serialize_value(zones)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.warning("Live carbon provider failed in /zones (%s). Falling back to mock provider.", exc)
+        try:
+            return serialize_value(MockCarbonIntensityProvider().get_all_zones())
+        except Exception as inner_exc:
+            raise HTTPException(status_code=500, detail=str(inner_exc))
 
 
 @router.get("/search-zones", tags=["Electricity Maps"])
@@ -114,18 +119,27 @@ def search_zones(q: str = Query(..., min_length=1)) -> dict[str, Any]:
         matches = client.search_zones(q)
         return serialize_value(matches)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.warning("Live carbon provider failed in /search-zones (%s). Falling back to mock provider.", exc)
+        try:
+            return serialize_value(MockCarbonIntensityProvider().search_zones(q))
+        except Exception as inner_exc:
+            raise HTTPException(status_code=500, detail=str(inner_exc))
 
 
 def run_single_file_analysis(
     filename: str,
     source_code: str,
     zone: str = "DK-DK1",
-    use_global_average: bool = False
+    use_global_average: bool = True
 ) -> dict[str, Any]:
     """
     Core single file analysis logic: static analysis, carbon estimation, AST transformation, and sandboxed measurement.
     """
+    try:
+        ast.parse(source_code, filename=filename)
+    except SyntaxError as se:
+        raise HTTPException(status_code=400, detail=f"Python syntax error: {se}")
+
     workspace_temp_dir = Path("temp_analysis")
     workspace_temp_dir.mkdir(exist_ok=True)
 
@@ -203,6 +217,39 @@ def run_single_file_analysis(
             sci_before = complexity_score.structural_complexity_index
             sci_after = complexity_score_after.structural_complexity_index
 
+            fd_before = getattr(result["complexity_metrics"], "function_density", 0.0)
+            fd_after = getattr(complexity_metrics_after, "function_density", 0.0)
+
+            if transform_res.auto_applied_fixes:
+                temp_base_path = workspace_temp_dir / f"temp_base_{datetime.now().timestamp()}_{filename}"
+                try:
+                    baseline_code = ast.unparse(ast.parse(source_code))
+                    with open(temp_base_path, "w", encoding="utf-8") as bf:
+                        bf.write(baseline_code)
+
+                    result_baseline = pipeline.run(
+                        source_file=temp_base_path,
+                        zone=zone,
+                        use_global_average=use_global_average
+                    )
+
+                    sci_baseline = result_baseline["complexity_score"].structural_complexity_index
+                    energy_baseline = result_baseline["energy_result"].energy.energy_joules
+                    fd_baseline = getattr(result_baseline["complexity_metrics"], "function_density", 0.0)
+
+                    sci_after = max(0.0, sci_before + (sci_after - sci_baseline))
+                    energy_joules_after = max(0.0, energy_joules_before + (energy_joules_after - energy_baseline))
+                    fd_after = max(0.0, fd_before + (fd_after - fd_baseline))
+                    energy_kwh_after = energy_joules_after / 3_600_000.0
+                except Exception as exc:
+                    logger.warning("Reformatted baseline normalization failed: %s", exc)
+                finally:
+                    if temp_base_path.exists():
+                        try:
+                            temp_base_path.unlink()
+                        except Exception:
+                            pass
+
             hazard_before = energy_kwh_before * intensity
             hazard_after = energy_kwh_after * intensity
 
@@ -273,6 +320,25 @@ def run_single_file_analysis(
                 "source": getattr(carbon_result.carbon_data, "source", "ElectricityMaps")
             }
 
+            smells_before = len([f for f in smell_report.findings if getattr(f.confidence, "value", 0.0) >= 0.5])
+            smells_after = len([f for f in smell_report_after.findings if getattr(f.confidence, "value", 0.0) >= 0.5])
+            smell_burden_before = round(sum(getattr(f.confidence, "value", 0.0) for f in smell_report.findings), 2)
+            smell_burden_after = round(sum(getattr(f.confidence, "value", 0.0) for f in smell_report_after.findings), 2)
+
+            ess_reduction = round(((ess - ess_after) / ess) * 100.0, 1) if ess > 0 else 0.0
+            cirs_reduction = round(((cirs_before - cirs_after) / cirs_before) * 100.0, 1) if cirs_before > 0 else 0.0
+            energy_reduction = round(((energy_joules_before - energy_joules_after) / energy_joules_before) * 100.0, 1) if energy_joules_before > 0 else 0.0
+            carbon_reduction = round(((hazard_before - hazard_after) / hazard_before) * 100.0, 1) if hazard_before > 0 else 0.0
+            smells_resolved = max(0, smells_before - smells_after)
+
+            real_estimated_impact = {
+                "ess_reduction_percent": ess_reduction,
+                "cirs_reduction_percent": cirs_reduction,
+                "energy_saving_percent": energy_reduction,
+                "carbon_saving_percent": carbon_reduction,
+                "smells_resolved": smells_resolved,
+            }
+
             post_refactor_estimation = {
                 "cirs_before": round(cirs_before, 6),
                 "cirs_after": round(cirs_after, 6),
@@ -289,7 +355,7 @@ def run_single_file_analysis(
                 "complexity_after": {
                     "cc": getattr(complexity_metrics_after, "cyclomatic_complexity", 1.0),
                     "nd": getattr(complexity_metrics_after, "max_nesting_depth", 1.0),
-                    "fd": getattr(complexity_metrics_after, "function_density", 1.0),
+                    "fd": round(fd_after, 4),
                     "sci": round(sci_after, 4)
                 },
                 "energy_before_joules": round(energy_joules_before, 4),
@@ -302,6 +368,10 @@ def run_single_file_analysis(
                 "exposure_after": round(exposure_after, 4),
                 "predicted_reduction_percent": predicted_reduction_percent,
                 "measured_reduction_percent": measured_reduction_percent,
+                "smells_before": smells_before,
+                "smells_after": smells_after,
+                "smell_burden_before": smell_burden_before,
+                "smell_burden_after": smell_burden_after,
                 "measurement_reliability": measured_runtime.get("measurement_reliability", "reliable"),
                 "reliability_threshold_ms": measured_runtime.get("reliability_threshold_ms", 50.0),
                 "reliability_note": measured_runtime.get("reliability_note", ""),
@@ -347,7 +417,7 @@ def run_single_file_analysis(
             "optimized_file_url": optimized_file_url,
             "auto_applied_fixes": transform_res.auto_applied_fixes,
             "manual_fixes": transform_res.manual_fixes,
-            "estimated_impact": transform_res.estimated_impact,
+            "estimated_impact": real_estimated_impact,
             "measured_runtime": measured_runtime,
             "post_refactor_estimation": post_refactor_estimation,
         }
@@ -366,7 +436,7 @@ def run_single_file_analysis(
 async def analyze_file(
     file: UploadFile = File(...),
     zone: str = Form("DK-DK1"),
-    use_global_average: bool = Form(False)
+    use_global_average: bool = Form(True)
 ) -> dict[str, Any]:
     """
     Upload a Python source file to execute static analysis, carbon estimation, AST transformation, and sandboxed measurement.
@@ -374,9 +444,16 @@ async def analyze_file(
     if not file.filename or not file.filename.endswith(".py"):
         raise HTTPException(status_code=400, detail="Only Python (.py) source files are supported.")
 
+    content_bytes = await file.read()
+    if len(content_bytes) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File size exceeds maximum allowed limit of 2 MB.")
+
     try:
-        content_bytes = await file.read()
         source_code = content_bytes.decode("utf-8", errors="replace")
+        try:
+            ast.parse(source_code, filename=file.filename)
+        except SyntaxError as se:
+            raise HTTPException(status_code=400, detail=f"Python syntax error: {se}")
         return run_single_file_analysis(file.filename, source_code, zone=zone, use_global_average=use_global_average)
     except HTTPException:
         raise
@@ -390,7 +467,7 @@ async def analyze_project(
     files: list[UploadFile] = File(None),
     file: UploadFile = File(None),
     zone: str = Form("DK-DK1"),
-    use_global_average: bool = Form(False)
+    use_global_average: bool = Form(True)
 ) -> dict[str, Any]:
     """
     Upload an entire Python project (ZIP archive or multiple .py files).

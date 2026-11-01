@@ -249,10 +249,13 @@ class ASTCodeTransformer:
         transformed_tree = hoister.visit(transformed_tree)
         ast.fix_missing_locations(transformed_tree)
 
-        try:
-            optimized_code = ast.unparse(transformed_tree)
-        except Exception:
+        if not hoister.auto_fixes:
             optimized_code = code
+        else:
+            try:
+                optimized_code = ast.unparse(transformed_tree)
+            except Exception:
+                optimized_code = code
 
         auto_applied = [
             {

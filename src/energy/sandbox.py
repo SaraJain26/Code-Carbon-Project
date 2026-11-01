@@ -28,6 +28,15 @@ class SingleRunResult:
     error_message: str | None = None
 
 
+def is_sandbox_enabled() -> bool:
+    """
+    Check whether sandboxed execution is enabled via ENABLE_SANDBOX_EXEC environment variable.
+    Defaults to True.
+    """
+    val = os.environ.get("ENABLE_SANDBOX_EXEC", "true").strip().lower()
+    return val not in ("false", "0", "no", "disabled", "off")
+
+
 class SandboxedRuntimeExecutor:
     """
     Executes Python source code in an isolated subprocess with safety constraints.
@@ -63,6 +72,16 @@ class SandboxedRuntimeExecutor:
         """
         Runs Python code inside a sandboxed subprocess and records empirical measurements.
         """
+        if not is_sandbox_enabled():
+            return SingleRunResult(
+                wall_time_ms=0.0,
+                cpu_time_ms=0.0,
+                memory_kb=0.0,
+                energy_joules=0.0,
+                hardware_sensor_active=False,
+                status="disabled",
+                error_message="Sandbox execution is disabled via ENABLE_SANDBOX_EXEC environment variable.",
+            )
         runner_script = f"""
 import sys
 import time
@@ -108,12 +127,18 @@ print(f"RESULT|{{wall_ms:.4f}}|{{cpu_ms:.4f}}|{{mem_kb:.2f}}|{{status}}|{{err_ms
                 f.write(runner_script)
 
             try:
+                clean_env = {
+                    k: v for k, v in os.environ.items()
+                    if not any(sensitive in k.upper() for sensitive in ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))
+                }
+                clean_env["PYTHONDONTWRITEBYTECODE"] = "1"
+
                 proc = subprocess.run(
                     [sys.executable, script_path],
                     capture_output=True,
                     text=True,
                     timeout=self.timeout_sec,
-                    env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                    env=clean_env,
                 )
 
                 if proc.returncode != 0 and "RESULT|" not in proc.stdout:
@@ -152,7 +177,7 @@ print(f"RESULT|{{wall_ms:.4f}}|{{cpu_ms:.4f}}|{{mem_kb:.2f}}|{{status}}|{{err_ms
                 err_msg = parts[5] if len(parts) > 5 else ""
 
                 hardware_rapl = self._check_hardware_rapl()
-                ref_power_watts = 15.0
+                ref_power_watts = 55.0
                 energy_joules = (wall_ms / 1000.0) * ref_power_watts
 
                 return SingleRunResult(
@@ -177,6 +202,37 @@ print(f"RESULT|{{wall_ms:.4f}}|{{cpu_ms:.4f}}|{{mem_kb:.2f}}|{{status}}|{{err_ms
                 )
 
     def measure_comparison(self, original_code: str, optimized_code: str) -> dict[str, Any]:
+        if not is_sandbox_enabled():
+            return {
+                "is_sandboxed": False,
+                "timeout_sec": self.timeout_sec,
+                "hardware_sensor_active": False,
+                "energy_method": "Execution Disabled",
+                "measurement_reliability": "disabled",
+                "reliability_threshold_ms": self.RELIABILITY_THRESHOLD_MS,
+                "reliability_note": "Sandbox execution is disabled via ENABLE_SANDBOX_EXEC=false.",
+                "original": {
+                    "wall_time_ms": 0.0,
+                    "cpu_time_ms": 0.0,
+                    "memory_kb": 0.0,
+                    "energy_joules": 0.0,
+                    "status": "disabled",
+                    "error_message": "Execution disabled by configuration.",
+                },
+                "optimized": {
+                    "wall_time_ms": 0.0,
+                    "cpu_time_ms": 0.0,
+                    "memory_kb": 0.0,
+                    "energy_joules": 0.0,
+                    "status": "disabled",
+                    "error_message": "Execution disabled by configuration.",
+                },
+                "measured_savings": {
+                    "time_reduction_percent": 0.0,
+                    "energy_reduction_percent": 0.0,
+                },
+            }
+
         orig_res = self.execute_sandboxed(original_code)
         opt_res = self.execute_sandboxed(optimized_code)
 
@@ -210,7 +266,7 @@ print(f"RESULT|{{wall_ms:.4f}}|{{cpu_ms:.4f}}|{{mem_kb:.2f}}|{{status}}|{{err_ms
             "is_sandboxed": True,
             "timeout_sec": self.timeout_sec,
             "hardware_sensor_active": hardware_active,
-            "energy_method": "Hardware RAPL Sensor" if hardware_active else "Empirical Runtime × 15W Reference TDP",
+            "energy_method": "Hardware RAPL Sensor" if hardware_active else "Empirical Runtime × 55W Reference Power",
             "measurement_reliability": measurement_reliability,
             "reliability_threshold_ms": self.RELIABILITY_THRESHOLD_MS,
             "reliability_note": reliability_note,

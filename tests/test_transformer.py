@@ -125,6 +125,8 @@ def test_transformer_comment_stripping_sci_invariance(tmp_path):
     artificially inflate Function Density (FD) or Structural Complexity Index (SCI),
     and ensures predicted reduction percent is non-negative when smells are fixed.
     """
+    from unittest.mock import patch
+    from carbon import MockCarbonIntensityProvider
     from pipeline import PredictivePipeline
     from sustainability.metrics import ResearchSustainabilityMetrics
 
@@ -156,7 +158,8 @@ def process_invariant(numbers):
     file_before = tmp_path / "test_comments.py"
     file_before.write_text(code, encoding="utf-8")
 
-    pipeline = PredictivePipeline()
+    with patch("pipeline.pipeline.get_carbon_provider", return_value=MockCarbonIntensityProvider()):
+        pipeline = PredictivePipeline()
     result_before = pipeline.run(file_before, zone="DK-DK1")
 
     transformer = ASTCodeTransformer()

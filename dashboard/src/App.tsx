@@ -36,7 +36,7 @@ import mammoth from 'mammoth';
 import JSZip from 'jszip';
 import './App.css';
 
-const rawApiUrl = (import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : 'https://code-carbon-projectuvicorn-api-main-app.onrender.com/api')).trim().replace(/\/+$/, '');
+const rawApiUrl = (import.meta.env.VITE_API_URL || '/api').trim().replace(/\/+$/, '');
 const API = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl}/api`;
 
 async function readApiJson<T>(response: Response, requestUrl: string): Promise<T> {
@@ -158,6 +158,10 @@ interface PostRefactorEstimation {
   structural_changes_summary?: string[];
   carbon_metadata?: CarbonMetadataDetail;
   measurement_reliability?: string;
+  smells_before?: number;
+  smells_after?: number;
+  smell_burden_before?: number;
+  smell_burden_after?: number;
 }
 
 interface AnalyzeResponse {
@@ -224,7 +228,7 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [code, setCode] = useState('');
   const [filename, setFilename] = useState('untitled.py');
-  const [globalAverage, setGlobalAverage] = useState(false);
+  const [globalAverage, setGlobalAverage] = useState(true);
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [projectResult, setProjectResult] = useState<ProjectAnalyzeResponse | null>(null);
   const [forecast, setForecast] = useState<any>(null);
@@ -543,7 +547,8 @@ export default function App() {
     if (!postRefactor || postRefactor.sci_before === undefined) return [];
     return [
       { name: 'SCI (x100)', Before: Number(((postRefactor.sci_before || 0) * 100).toFixed(2)), After: Number(((postRefactor.sci_after || 0) * 100).toFixed(2)) },
-      { name: 'ESS (0-10)', Before: Number((postRefactor.ess_before || 0).toFixed(1)), After: Number((postRefactor.ess_after || 0).toFixed(1)) },
+      { name: 'ESS (0-10)', Before: Number((postRefactor.ess_before || 0).toFixed(2)), After: Number((postRefactor.ess_after || 0).toFixed(2)) },
+      { name: 'Smells (count)', Before: Number(postRefactor.smells_before || 0), After: Number(postRefactor.smells_after || 0) },
       { name: 'Energy (J)', Before: Number((postRefactor.energy_before_joules || 0).toFixed(2)), After: Number((postRefactor.energy_after_joules || 0).toFixed(2)) },
       { name: 'CIRS (x1e4)', Before: Number(((postRefactor.cirs_before || 0) * 10000).toFixed(2)), After: Number(((postRefactor.cirs_after || 0) * 10000).toFixed(2)) }
     ];
@@ -1121,10 +1126,10 @@ export default function App() {
           <Metric label="Total Project SLOC" metric={String(projectResult.total_lines_of_code)} unit="SUM (lines of code)" tone="blue" />
           <Metric label="Total Individual Findings" metric={String(projectResult.total_findings)} unit="SUM (energy smells)" tone="blue" />
           <Metric label="Macro-Avg SCI" metric={fixed(projectResult.avg_sci, 4)} unit="MACRO-AVG (index 0-1)" tone="green" />
-          <Metric label="Macro-Avg ESS" metric={fixed(projectResult.avg_ess, 1)} unit="MACRO-AVG (out of 10)" tone="amber" />
+          <Metric label="Macro-Avg ESS" metric={fixed(projectResult.avg_ess, 2)} unit="MACRO-AVG (out of 10)" tone="amber" />
           <Metric label="Total Project Energy" metric={fixed(projectResult.total_energy_joules, 2)} unit={`SUM (${fixed(projectResult.total_energy_kwh, 6)} kWh)`} tone="green" />
-          <Metric label="Primary Research CIRS" metric={fixed(projectResult.avg_cirs, 6)} unit="MACRO-AVG (gCO₂eq/run)" tone="ink" />
-          <Metric label="Total CIRS Capacity" metric={fixed(projectResult.total_cirs, 6)} unit="SUM (gCO₂eq/run)" tone="ink" />
+          <Metric label="Primary Research CIRS" metric={fixed(projectResult.avg_cirs, 6)} unit="MACRO-AVG (risk index)" tone="ink" />
+          <Metric label="Total CIRS Capacity" metric={fixed(projectResult.total_cirs, 6)} unit="SUM (risk index)" tone="ink" />
         </div>
 
         {/* PROJECT TOP FILES SPOTLIGHT */}
@@ -1176,7 +1181,7 @@ export default function App() {
                 <small title={topFindingsFiles[0].relative_path}>{topFindingsFiles[0].relative_path}</small>
                 <div className="stat-val">{topFindingsFiles[0].findings_count} Smells</div>
                 <div className="stat-sub">
-                  ESS Score: {fixed(topFindingsFiles[0].ess, 1)} / 10 ({topFindingsFiles[0].lines_of_code} LOC)
+                  ESS Score: {fixed(topFindingsFiles[0].ess, 2)} / 10 ({topFindingsFiles[0].lines_of_code} LOC)
                 </div>
               </article>
             ) : null}
@@ -1202,7 +1207,7 @@ export default function App() {
                   <p className="overline">ENERGY CONSUMPTION</p>
                   <h3>Energy Consumption by File (Joules)</h3>
                 </div>
-                <span>Real backend measurements</span>
+                <span>Static model estimate</span>
               </div>
               {projectFilesEnergyData.length ? (
                 <div className="chart" style={{ marginTop: '16px' }}>
@@ -1321,7 +1326,7 @@ export default function App() {
                       <CartesianGrid vertical={false} stroke="#e7e4dd" strokeDasharray="3 3" />
                       <XAxis dataKey="name" tick={{ fill: '#6d6a63', fontSize: 10 }} interval={0} angle={projectFilesEssData.length > 4 ? -25 : 0} textAnchor={projectFilesEssData.length > 4 ? 'end' : 'middle'} />
                       <YAxis tick={{ fill: '#6d6a63', fontSize: 10 }} domain={[0, 10]} />
-                      <Tooltip cursor={{ fill: '#f3f1eb' }} formatter={(val: any) => [fixed(val, 1), 'ESS Score']} labelFormatter={(_label, items) => items?.[0]?.payload?.relativePath || _label} />
+                      <Tooltip cursor={{ fill: '#f3f1eb' }} formatter={(val: any) => [fixed(val, 2), 'ESS Score']} labelFormatter={(_label, items) => items?.[0]?.payload?.relativePath || _label} />
                       <Bar dataKey="ess" fill="#f59e0b" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -1335,7 +1340,7 @@ export default function App() {
                   <p className="overline">CARBON RISK SCORE</p>
                   <h3>CIRS by File</h3>
                 </div>
-                <span>gCO₂eq/run</span>
+                <span>risk index</span>
               </div>
               {projectFilesCirsData.length ? (
                 <div className="chart" style={{ marginTop: '14px' }}>
@@ -1498,7 +1503,7 @@ export default function App() {
                     <td><span className={`status-badge ${fileItem.status}`}>{fileItem.status}</span></td>
                     <td><span className={`findings-badge ${fileItem.findings_count > 0 ? 'has-findings' : ''}`}>{fileItem.findings_count}</span></td>
                     <td>{fixed(fileItem.sci, 4)}</td>
-                    <td>{fixed(fileItem.ess, 1)}</td>
+                    <td>{fixed(fileItem.ess, 2)}</td>
                     <td>{fixed(fileItem.cirs, 6)}</td>
                     <td>{fixed(fileItem.energy_joules, 3)}</td>
                     <td>
@@ -1542,8 +1547,8 @@ export default function App() {
 
         <div className="metric-grid">
           <Metric label="Estimated Energy" metric={fixed(energy.energy_joules, 3)} unit="joules" tone="green" />
-          <Metric label="Research CIRS" metric={fixed(metrics?.carbon_impact_risk_score, 6)} unit="gCO₂eq/run" tone="ink" />
-          <Metric label="Energy Smell Score" metric={fixed(metrics?.energy_smell_score, 1)} unit="out of 10" tone="amber" />
+          <Metric label="Research CIRS" metric={fixed(metrics?.carbon_impact_risk_score, 6)} unit="risk index" tone="ink" />
+          <Metric label="Energy Smell Score" metric={fixed(metrics?.energy_smell_score, 2)} unit="out of 10" tone="amber" />
           <Metric label="Individual Findings" metric={String(totalFindingsCount)} unit="findings" tone="blue" />
         </div>
 
@@ -1649,13 +1654,13 @@ export default function App() {
               <div style={{ padding: '16px 0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div style={{ background: 'var(--paper)', padding: '14px', borderRadius: '8px', border: '1px solid var(--line)' }}>
                   <p style={{ margin: 0, fontSize: '11px', color: 'var(--muted)' }}>Energy Smell Score (ESS)</p>
-                  <strong style={{ fontSize: '24px', color: 'var(--ink)', display: 'block', marginTop: '4px' }}>{fixed(metrics?.energy_smell_score, 1)} / 10</strong>
+                  <strong style={{ fontSize: '24px', color: 'var(--ink)', display: 'block', marginTop: '4px' }}>{fixed(metrics?.energy_smell_score, 2)} / 10</strong>
                   <span style={{ fontSize: '10px', color: 'var(--muted)' }}>Version: {metrics?.ess_version || '1.0.0'}</span>
                 </div>
                 <div style={{ background: 'var(--paper)', padding: '14px', borderRadius: '8px', border: '1px solid var(--line)' }}>
                   <p style={{ margin: 0, fontSize: '11px', color: 'var(--muted)' }}>Carbon Risk Score (CIRS)</p>
                   <strong style={{ fontSize: '20px', color: 'var(--forest)', display: 'block', marginTop: '4px' }}>{fixed(metrics?.carbon_impact_risk_score, 6)}</strong>
-                  <span style={{ fontSize: '10px', color: 'var(--muted)' }}>gCO₂eq / run</span>
+                  <span style={{ fontSize: '10px', color: 'var(--muted)' }}>risk index</span>
                 </div>
               </div>
             </section>
@@ -1780,8 +1785,8 @@ export default function App() {
               <Metric label="Total Project Energy" metric={`${fixed(projectResult.total_energy_joules, 2)} J`} unit={`SUM (${fixed(projectResult.total_energy_kwh, 6)} kWh)`} tone="green" />
               <Metric label="Project Carbon Footprint" metric={fixed(projectResult.total_energy_kwh * carbonIntensityToDisplay, 4)} unit="gCO₂eq" tone="amber" />
               <Metric label="Grid Carbon Intensity" metric={fixed(carbonIntensityToDisplay, 2)} unit="gCO₂eq/kWh" tone="blue" />
-              <Metric label="Primary Research CIRS" metric={fixed(projectResult.avg_cirs, 6)} unit="MACRO-AVG (gCO₂eq/run)" tone="ink" />
-              <Metric label="Total CIRS Capacity" metric={fixed(projectResult.total_cirs, 6)} unit="SUM (gCO₂eq/run)" tone="ink" />
+              <Metric label="Primary Research CIRS" metric={fixed(projectResult.avg_cirs, 6)} unit="MACRO-AVG (risk index)" tone="ink" />
+              <Metric label="Total CIRS Capacity" metric={fixed(projectResult.total_cirs, 6)} unit="SUM (risk index)" tone="ink" />
             </div>
 
             <section className="panel project-files-panel" style={{ marginTop: '20px' }}>
@@ -1852,8 +1857,9 @@ export default function App() {
               <div className="refactor-impact-grid metric-grid">
                 <Metric label="SCI (Before → After)" metric={`${fixed(postRefactor.sci_before, 4)} → ${fixed(postRefactor.sci_after, 4)}`} unit="index (0-1)" tone="green" />
                 <Metric label="ESS (Before → After)" metric={`${fixed(postRefactor.ess_before, 2)} → ${fixed(postRefactor.ess_after, 2)}`} unit="out of 10" tone="amber" />
+                <Metric label="Energy Smells (Before → After)" metric={`${postRefactor.smells_before ?? 0} → ${postRefactor.smells_after ?? 0}`} unit={`actionable (conf ≥ 0.5) · burden ${fixed(postRefactor.smell_burden_before, 2)} → ${fixed(postRefactor.smell_burden_after, 2)}`} tone="amber" />
                 <Metric label="Energy (Before → After)" metric={`${fixed(postRefactor.energy_before_joules, 3)} → ${fixed(postRefactor.energy_after_joules, 3)}`} unit="joules" tone="amber" />
-                <Metric label="Research CIRS (Before → After)" metric={`${fixed(postRefactor.cirs_before, 6)} → ${fixed(postRefactor.cirs_after, 6)}`} unit="gCO₂eq/run" tone="ink" />
+                <Metric label="Research CIRS (Before → After)" metric={`${fixed(postRefactor.cirs_before, 6)} → ${fixed(postRefactor.cirs_after, 6)}`} unit="risk index" tone="ink" />
                 <Metric label="Measured Speedup" metric={postRefactor.measured_reduction_percent !== undefined ? `${fixed(postRefactor.measured_reduction_percent, 1)}%` : '—'} unit={postRefactor.measurement_reliability || 'reliable'} tone="blue" />
               </div>
             )}

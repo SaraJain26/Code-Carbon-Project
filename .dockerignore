@@ -36,9 +36,6 @@ temp_analysis/
 tsconfig.json
 tsconfig.app.json
 tsconfig.node.json
-pyproject.toml
-requirements.txt
-README.md
 docs/
 research/
 benchmarks/

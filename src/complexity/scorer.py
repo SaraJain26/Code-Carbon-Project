@@ -4,9 +4,12 @@ Complexity scoring logic.
 This module computes:
 
 1. Structural Complexity Index (SCI)
-2. Carbon Impact Risk Score (CIRS)
-3. Risk classification
+2. Internal Heuristic Structural-Smell Risk Score
+3. Risk classification (RiskLevel)
 4. Sustainability recommendation
+
+Note: The research-validated physical Carbon Impact Risk Score (CIRS_Research = Hazard * Exposure)
+is computed in `sustainability.metrics.ResearchSustainabilityMetrics`.
 """
 
 from __future__ import annotations
@@ -26,7 +29,7 @@ SCI_ND_WEIGHT = 0.30
 SCI_FD_WEIGHT = 0.20
 
 # ---------------------------------------------------------------------
-# Final Carbon Impact Risk Score (CIRS) weights
+# Internal Heuristic Risk Score weights (used for qualitative RiskLevel)
 # ---------------------------------------------------------------------
 
 SCI_WEIGHT = 0.55
@@ -57,11 +60,15 @@ class ComplexityScorer:
               + 0.20 * Function Density
 
     Stage 2:
-        Carbon Impact Risk Score (CIRS)
+        Internal Heuristic Risk Score
 
-            CIRS =
+            Heuristic Risk Score =
                 0.55 * SCI
-              + 0.45 * Energy Smell Score
+              + 0.45 * Normalized Energy Smell Score (ESS / 10.0)
+
+        This heuristic score [0, 1] is mapped to qualitative RiskLevel
+        and recommendations.
+        (For physical research CIRS in gCO2eq/run, see sustainability.metrics).
     """
 
     @staticmethod
