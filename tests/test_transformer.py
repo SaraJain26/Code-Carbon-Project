@@ -203,3 +203,49 @@ def process_invariant(numbers):
     assert predicted_reduction >= 0.0
 
 
+def test_transformer_does_not_hoist_side_effecting_calls():
+    code = """
+import random
+
+def sample_each_iteration():
+    values = []
+    for _ in range(3):
+        value = random.random()
+        values.append(value)
+    return values
+"""
+    res = ASTCodeTransformer().transform(code)
+
+    assert res.optimized_code == code
+    assert res.auto_applied_fixes == []
+
+
+def test_transformer_does_not_hoist_reads_of_mutated_collections():
+    code = """
+def collect_sizes(values):
+    sizes = []
+    for _ in range(3):
+        current_size = len(values)
+        sizes.append(current_size)
+        values.append(None)
+    return sizes
+"""
+    res = ASTCodeTransformer().transform(code)
+
+    assert res.optimized_code == code
+    assert res.auto_applied_fixes == []
+
+
+def test_transformer_does_not_hoist_truncating_file_opens():
+    code = """
+def write_latest_line(lines):
+    for line in lines:
+        with open('output.txt', 'w') as stream:
+            stream.write(line)
+"""
+    res = ASTCodeTransformer().transform(code)
+
+    assert res.optimized_code == code
+    assert res.auto_applied_fixes == []
+
+

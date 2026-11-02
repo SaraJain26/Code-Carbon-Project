@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, Code2, Download, FileCode2, FileText, Flame, Folder, FolderArchive, Gauge, Globe2, Leaf, LoaderCircle, Moon, Play, Search, Sparkles, Sun, Upload, X } from 'lucide-react';
+import { Activity, AlertCircle, ArrowLeft, ArrowRight, ChevronDown, ChevronRight, Clock3, Code2, Copy, Download, FileCode2, FileText, Flame, Folder, FolderArchive, Gauge, Globe2, Leaf, LoaderCircle, Moon, Play, Search, Sparkles, Sun, Upload, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -11,15 +11,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   'Other': '#64748b'
 };
 
-const SEVERITY_COLORS: Record<string, string> = {
-  'High Severity': '#ef4444',
-  'High': '#ef4444',
-  'Medium Severity': '#f59e0b',
-  'Medium': '#f59e0b',
-  'Low Severity': '#10b981',
-  'Low': '#10b981'
-};
-
 function ChartFallback({ title, message }: { title?: string; message?: string }) {
   return (
     <div className="empty-chart-fallback">
@@ -28,6 +19,263 @@ function ChartFallback({ title, message }: { title?: string; message?: string })
         {title || 'No data available for this visualization'}
       </p>
       {message && <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '11px' }}>{message}</p>}
+    </div>
+  );
+}
+
+type RankedMetricItem = { name: string; relativePath: string; value: number };
+
+function RankedMetricBars({ items, color, formatValue, label }: {
+  items: RankedMetricItem[];
+  color: string;
+  formatValue: (value: number) => string;
+  label: string;
+}) {
+  if (!items.length) return <ChartFallback title="No successful file results" />;
+  const maxValue = Math.max(...items.map(item => item.value), 0);
+  if (maxValue <= 0) return <ChartFallback title="No non-zero values to compare" />;
+  const nameCounts = new Map<string, number>();
+  items.forEach(item => nameCounts.set(item.name, (nameCounts.get(item.name) || 0) + 1));
+
+  return (
+    <div className="ranked-metric-list" role="list" aria-label={label}>
+      {items.map((item, index) => (
+        <div className="ranked-metric-row" role="listitem" key={`${item.relativePath}-${index}`} title={`${item.relativePath} · ${formatValue(item.value)}`}>
+          <span className="ranked-metric-name">{nameCounts.get(item.name)! > 1 ? item.relativePath : item.name}</span>
+          <span className="ranked-metric-track" aria-hidden="true">
+            <span className="ranked-metric-fill" style={{ width: `${Math.max(2, (item.value / maxValue) * 100)}%`, background: color }} />
+          </span>
+          <strong className="ranked-metric-value">{formatValue(item.value)}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+type ComparisonRow = { name: string; before: number; after: number; unit: string; decimals?: number };
+
+const PYTHON_KEYWORDS = new Set(['and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except', 'False', 'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'True', 'try', 'while', 'with', 'yield', 'None']);
+
+function ruleExampleReplacement(example?: string | null): string | undefined {
+  if (!example) return undefined;
+  const afterMarker = example.match(/(?:^|\n)\s*# After:\s*\n/i);
+  if (!afterMarker || afterMarker.index === undefined) return undefined;
+  return example.slice(afterMarker.index + afterMarker[0].length).trim() || undefined;
+}
+
+function PythonCodeBlock({ code, startLine = 1 }: { code: string; startLine?: number }) {
+  const tokenPattern = /(#.*$|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*\b)/g;
+  return (
+    <pre className="python-code-block"><code>{code.split(/\r?\n/).map((line, lineIndex) => {
+      const tokens: React.ReactNode[] = [];
+      let cursor = 0;
+      for (const match of line.matchAll(tokenPattern)) {
+        const token = match[0];
+        const index = match.index ?? 0;
+        if (index > cursor) tokens.push(line.slice(cursor, index));
+        const className = token.startsWith('#') ? 'python-comment'
+          : token.startsWith('"') || token.startsWith("'") ? 'python-string'
+            : /^\d/.test(token) ? 'python-number'
+              : PYTHON_KEYWORDS.has(token) ? 'python-keyword' : undefined;
+        tokens.push(className ? <span className={className} key={`${lineIndex}-${index}`}>{token}</span> : token);
+        cursor = index + token.length;
+      }
+      if (cursor < line.length) tokens.push(line.slice(cursor));
+      return <span className="python-code-line" key={lineIndex}><span className="python-line-number">{startLine + lineIndex}</span><span>{tokens.length ? tokens : ' '}</span></span>;
+    })}</code></pre>
+  );
+}
+
+function CopyCodeButton({ code, label = 'Copy code' }: { code: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = code;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      textarea.remove();
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  };
+  return <button className="copy-code-button" type="button" onClick={copy}><Copy size={13} />{copied ? 'Copied' : label}</button>;
+}
+
+function CodeChangesSection({ filename, sourceCode, optimizedCode, findings, autoFixes = [], manualFixes = [], recommendations = [] }: {
+  filename: string;
+  sourceCode: string;
+  optimizedCode?: string;
+  findings: any[];
+  autoFixes?: any[];
+  manualFixes?: any[];
+  recommendations?: any[];
+}) {
+  const [showModifiedCode, setShowModifiedCode] = useState(false);
+  const sourceLines = sourceCode.split(/\r?\n/);
+  const findFix = (fixes: any[], finding: any) => fixes.find(fix => {
+    if (fix.rule_id !== finding.rule_id) return false;
+    const issueLine = finding.line_number;
+    return issueLine == null || fix.line_number === issueLine
+      || (fix.line_start != null && fix.line_end != null && issueLine >= fix.line_start && issueLine <= fix.line_end);
+  });
+  return (
+    <div className="code-changes-file">
+      <h3><FileCode2 size={16} />{filename}</h3>
+      {findings.length ? findings.map((finding, index) => {
+        const autoFix = findFix(autoFixes, finding);
+        const manualFix = findFix(manualFixes, finding);
+        const recommendation = recommendations.find(item => item.rule_id === finding.rule_id);
+        const lineStart = autoFix?.line_start ?? manualFix?.line_start ?? finding.line_number ?? undefined;
+        const lineEnd = autoFix?.line_end ?? manualFix?.line_end ?? finding.end_line ?? finding.line_number ?? lineStart;
+        const originalCode = autoFix?.original_code || manualFix?.original_code
+          || (Number.isInteger(lineStart) ? sourceLines.slice(lineStart - 1, lineEnd).join('\n') : '');
+        const verifiedReplacement = autoFix?.replacement_code as string | undefined;
+        const exampleReplacement = ruleExampleReplacement(recommendation?.code_example);
+        const replacementCode = verifiedReplacement || exampleReplacement;
+        const verified = Boolean(autoFix?.is_auto_applied && verifiedReplacement && optimizedCode && optimizedCode !== sourceCode);
+        return (
+          <details className="code-change-item" key={`${finding.rule_id}-${finding.line_number}-${index}`} open>
+            <summary>
+              <span><strong>{finding.message || recommendation?.title || finding.rule_id}</strong><small>{finding.rule_id} · {filename} · {lineStart == null ? 'Line unavailable' : lineStart === lineEnd ? `Line ${lineStart}` : `Lines ${lineStart}–${lineEnd}`}</small></span>
+              <ChevronDown size={16} />
+            </summary>
+            <div className="code-change-content">
+              <div className="code-change-columns">
+                <section>
+                  <div className="code-block-heading"><strong>Original code</strong>{originalCode && <CopyCodeButton code={originalCode} label="Copy original" />}</div>
+                  {originalCode ? <PythonCodeBlock code={originalCode} startLine={lineStart ?? 1} /> : <p className="code-unavailable">Source unavailable. Re-run analysis.</p>}
+                </section>
+                <section>
+                  <div className="code-block-heading"><strong>Suggested replacement</strong>{exampleReplacement && !verifiedReplacement && <small>Rule example</small>}{replacementCode && <CopyCodeButton code={replacementCode} label="Copy replacement" />}</div>
+                  {replacementCode ? <PythonCodeBlock code={replacementCode} startLine={lineStart ?? 1} /> : <p className="code-unavailable">No replacement code available.</p>}
+                  {verified && <button className="apply-code-button" type="button" onClick={() => setShowModifiedCode(true)}>Apply verified fixes to preview</button>}
+                </section>
+              </div>
+            </div>
+          </details>
+        );
+      }) : <p className="code-unavailable">No findings were returned for this file.</p>}
+      {showModifiedCode && optimizedCode && (
+        <section className="modified-code-preview">
+          <div className="code-block-heading"><strong>Modified file preview</strong><CopyCodeButton code={optimizedCode} label="Copy modified file" /></div>
+          <p>The original upload remains unchanged. This preview contains the verified AST output.</p>
+          <PythonCodeBlock code={optimizedCode} />
+        </section>
+      )}
+    </div>
+  );
+}
+
+function ProjectCodeChangesSection({ projectResult, projectFiles, projectZipFile }: {
+  projectResult: ProjectAnalyzeResponse;
+  projectFiles: ScannedFile[];
+  projectZipFile: File | null;
+}) {
+  const [localSources, setLocalSources] = useState<Map<string, string>>(() => new Map());
+  const sourceScope = projectResult.timestamp || projectResult.project_name;
+  const sourceKey = (path: string) => `${sourceScope}::${path.replace(/\\/g, '/').replace(/^\.\//, '')}`;
+  const filesWithFindings = projectResult.files.filter(file =>
+    file.status === 'success' && file.single_file_response?.pipeline_raw?.energy_smell_report?.findings?.length
+  );
+  useEffect(() => {
+    let cancelled = false;
+    const normalizePath = (value: string) => value.replace(/\\/g, '/').replace(/^\.\//, '');
+    const missingSources = filesWithFindings.filter(file =>
+      !file.original_code && !file.single_file_response?.original_code && !localSources.has(sourceKey(file.relative_path))
+    );
+    if (!missingSources.length) return;
+
+    void (async () => {
+      const nextSources = new Map(localSources);
+      for (const item of projectFiles) {
+        const path = normalizePath(item.path);
+        if (missingSources.some(file => normalizePath(file.relative_path) === path)) {
+          try { nextSources.set(sourceKey(path), await item.file.text()); } catch { /* Leave missing source visible as unavailable. */ }
+        }
+      }
+      if (projectZipFile) {
+        try {
+          const zip = await JSZip.loadAsync(projectZipFile);
+          const zipEntries = Object.keys(zip.files).filter(path => !zip.files[path].dir);
+          for (const file of missingSources) {
+            const target = normalizePath(file.relative_path);
+            const matchedPath = zipEntries.find(path => normalizePath(path) === target);
+            const entry = matchedPath ? zip.file(matchedPath) : null;
+            if (entry) nextSources.set(sourceKey(file.relative_path), await entry.async('string'));
+          }
+        } catch { /* Keep any folder-source matches already loaded. */ }
+      }
+      if (!cancelled && nextSources.size !== localSources.size) setLocalSources(nextSources);
+    })();
+
+    return () => { cancelled = true; };
+  }, [projectResult, projectFiles, projectZipFile, localSources]);
+  return (
+    <section className="panel suggested-code-section">
+      <div className="panel-head">
+        <div><p className="overline">ISSUE-BY-ISSUE FIXES</p><h3>Suggested Code Changes</h3></div>
+        <span>{projectResult.total_findings} detected issue(s)</span>
+      </div>
+      {filesWithFindings.length ? (
+        <div className="suggested-code-files">
+          {filesWithFindings.map(fileItem => {
+            const fileResponse = fileItem.single_file_response!;
+            const fileFindings = fileResponse.pipeline_raw?.energy_smell_report?.findings || [];
+            const fileRecommendations = Array.isArray(fileResponse.recommendations)
+              ? fileResponse.recommendations
+              : fileResponse.recommendations?.recommendations || [];
+            return (
+              <CodeChangesSection
+                key={fileItem.relative_path}
+                filename={fileItem.relative_path}
+                sourceCode={fileItem.original_code || fileResponse.original_code || localSources.get(sourceKey(fileItem.relative_path)) || ''}
+                optimizedCode={fileResponse.optimized_code}
+                findings={fileFindings}
+                autoFixes={fileResponse.auto_applied_fixes || []}
+                manualFixes={fileResponse.manual_fixes || []}
+                recommendations={fileRecommendations}
+              />
+            );
+          })}
+        </div>
+      ) : <p className="code-unavailable">No issue-specific code changes are available for successfully analyzed files.</p>}
+    </section>
+  );
+}
+
+function MetricComparison({ rows }: { rows: ComparisonRow[] }) {
+  if (!rows.length) return null;
+  return (
+    <div className="comparison-table-wrap">
+      <table className="comparison-table">
+        <thead><tr><th>Metric</th><th>Before</th><th>After</th><th>Change</th></tr></thead>
+        <tbody>
+          {rows.map(row => {
+            const delta = row.before > 0 ? ((row.after - row.before) / row.before) * 100 : null;
+            const unchanged = Math.abs(row.after - row.before) < Math.pow(10, -(row.decimals ?? 3)) / 2;
+            const changeClass = unchanged ? 'unchanged' : delta !== null && delta < 0 ? 'change-good' : 'change-worse';
+            const changeText = unchanged
+              ? 'No change'
+              : delta === null
+              ? (row.after === 0 ? 'No change' : 'Increased from zero')
+              : `${Math.abs(delta).toFixed(1)}% ${delta < 0 ? 'lower' : 'higher'}`;
+            return (
+              <tr key={row.name}>
+                <th scope="row">{row.name}</th>
+                <td>{fixed(row.before, row.decimals ?? 3)} <span>{row.unit}</span></td>
+                <td>{fixed(row.after, row.decimals ?? 3)} <span>{row.unit}</span></td>
+                <td><strong className={changeClass}>{changeText}</strong></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -174,10 +422,11 @@ interface PostRefactorEstimation {
 
 interface AnalyzeResponse {
   filename?: string;
+  original_code?: string;
   timestamp?: string;
   pipeline_raw?: {
     energy_smell_report?: {
-      summary?: { total_findings?: number; high_severity_count?: number; medium_severity_count?: number; low_severity_count?: number };
+      summary?: { total_findings?: number; high_severity_count?: number; medium_severity_count?: number; low_severity_count?: number; findings_by_severity?: Record<string, number> };
       findings?: any[];
     };
     energy_result?: { energy?: { energy_joules?: number; energy_kwh?: number } };
@@ -189,8 +438,23 @@ interface AnalyzeResponse {
   research_metrics?: ResearchMetrics;
   recommendations?: any;
   optimized_code?: string;
+  auto_applied_fixes?: ASTCodeFix[];
+  manual_fixes?: ASTCodeFix[];
   post_refactor_estimation?: PostRefactorEstimation;
   findings?: any[];
+}
+
+interface ASTCodeFix {
+  rule_id?: string;
+  rule_name?: string;
+  description?: string;
+  line_number?: number | null;
+  line_start?: number | null;
+  line_end?: number | null;
+  original_code?: string | null;
+  replacement_code?: string | null;
+  unavailable_reason?: string;
+  is_auto_applied?: boolean;
 }
 
 interface ProjectFileResult {
@@ -254,9 +518,9 @@ export default function App() {
   const [projectSummary, setProjectSummary] = useState<ProjectSummary | null>(null);
 
   const [tableSearch, setTableSearch] = useState('');
+  const [fileStatusFilter, setFileStatusFilter] = useState<'all' | 'success' | 'error'>('all');
   const [sortColumn, setSortColumn] = useState<'filename' | 'lines_of_code' | 'findings_count' | 'sci' | 'ess' | 'cirs' | 'energy_joules'>('findings_count');
   const [sortAsc, setSortAsc] = useState(false);
-  const [expandedRecRule, setExpandedRecRule] = useState<string | null>(null);
 
   const fileInput = useRef<HTMLInputElement>(null);
   const projectFolderInput = useRef<HTMLInputElement>(null);
@@ -332,6 +596,7 @@ export default function App() {
   const raw = result?.pipeline_raw || {}, energy = raw.energy_result?.energy || {}, carbon = raw.carbon_result?.carbon_data || {};
   const metrics = result?.research_metrics;
   const recommendations = Array.isArray(result?.recommendations) ? result.recommendations : (result?.recommendations?.recommendations || []);
+  const resultFindings = result?.pipeline_raw?.energy_smell_report?.findings || result?.findings || [];
   const postRefactor = result?.post_refactor_estimation || {};
 
   // Individual Findings count from backend summary / findings for single file
@@ -372,7 +637,8 @@ export default function App() {
       suggested_fix: string;
       explanation: string;
       occurrences: number;
-      affected_files: { filename: string; relative_path: string; line_number?: number; confidence: number }[];
+      affected_files: { filename: string; relative_path: string; line_number?: number; confidence: number; source_lines: { line_number: number; code: string }[] }[];
+      code_example?: string;
     }>();
 
     for (const fileItem of projectResult.files) {
@@ -391,19 +657,25 @@ export default function App() {
             category: rec.category || 'Code Structure',
             severity: rec.severity || 'medium',
             priority_score: Number(rec.priority_score || rec.severity_score || 0.5),
-            suggested_fix: rec.suggested_fix || '',
+            suggested_fix: rec.optimization_recommendation || rec.suggested_fix || '',
             explanation: rec.explanation || rec.description || rec.message || '',
             occurrences: 0,
-            affected_files: []
+            affected_files: [],
+            code_example: rec.code_example || undefined
           });
         }
         const entry = map.get(key)!;
-        entry.occurrences += 1;
+        const sourceLines = String(fileItem.original_code || '').split(/\r?\n/);
+        const recFindings = Array.isArray(rec.findings) ? rec.findings : [];
+        const lineNumbers = recFindings.map((finding: any) => finding.line_number).filter((line: any) => Number.isInteger(line) && line > 0);
+        if (!lineNumbers.length && Number.isInteger(rec.line_number) && rec.line_number > 0) lineNumbers.push(rec.line_number);
+        entry.occurrences += Math.max(1, recFindings.length);
         entry.affected_files.push({
           filename: fileItem.filename,
           relative_path: fileItem.relative_path,
-          line_number: rec.line_number,
-          confidence: rec.confidence ?? 1.0
+          line_number: lineNumbers[0],
+          confidence: rec.confidence ?? 1.0,
+          source_lines: lineNumbers.map((lineNumber: number) => ({ line_number: lineNumber, code: sourceLines[lineNumber - 1] || '' }))
         });
       }
     }
@@ -464,83 +736,54 @@ export default function App() {
   // Project chart datasets
   const projectFilesEnergyData = useMemo(() => {
     if (!projectResult?.files) return [];
-    return projectResult.files.map(f => ({
+    return projectResult.files.filter(f => f.status === 'success').map(f => ({
       name: f.filename,
       relativePath: f.relative_path,
       energyJoules: Number(f.energy_joules || 0),
       energyKwh: Number((f.energy_joules || 0) / 3600000.0)
-    }));
+    })).sort((a, b) => b.energyJoules - a.energyJoules).slice(0, 10);
   }, [projectResult]);
 
   const projectFilesCarbonData = useMemo(() => {
     if (!projectResult?.files) return [];
-    return projectResult.files.map(f => ({
+    return projectResult.files.filter(f => f.status === 'success').map(f => ({
       name: f.filename,
       relativePath: f.relative_path,
       carbonGrams: Number(((f.energy_joules || 0) / 3600000.0) * (carbonIntensityToDisplay || 435)),
       cirs: Number(f.cirs || 0)
-    }));
+    })).sort((a, b) => b.carbonGrams - a.carbonGrams).slice(0, 10);
   }, [projectResult, carbonIntensityToDisplay]);
 
   const projectFilesSciData = useMemo(() => {
     if (!projectResult?.files) return [];
-    return projectResult.files.map(f => ({
+    return projectResult.files.filter(f => f.status === 'success').map(f => ({
       name: f.filename,
       relativePath: f.relative_path,
       sci: Number(f.sci || 0)
-    }));
+    })).sort((a, b) => b.sci - a.sci).slice(0, 10);
   }, [projectResult]);
 
   const projectFilesEssData = useMemo(() => {
     if (!projectResult?.files) return [];
-    return projectResult.files.map(f => ({
+    return projectResult.files.filter(f => f.status === 'success').map(f => ({
       name: f.filename,
       relativePath: f.relative_path,
       ess: Number(f.ess || 0)
-    }));
+    })).sort((a, b) => b.ess - a.ess).slice(0, 10);
   }, [projectResult]);
 
   const projectFilesCirsData = useMemo(() => {
     if (!projectResult?.files) return [];
-    return projectResult.files.map(f => ({
+    return projectResult.files.filter(f => f.status === 'success').map(f => ({
       name: f.filename,
       relativePath: f.relative_path,
       cirs: Number(f.cirs || 0)
-    }));
+    })).sort((a, b) => b.cirs - a.cirs).slice(0, 10);
   }, [projectResult]);
 
   const projectCategoryDistributionData = useMemo(() => {
     return projectCategoryDistribution.filter(c => c.count > 0);
   }, [projectCategoryDistribution]);
-
-  const projectSeverityDistribution = useMemo(() => {
-    if (!projectResult?.files) return [];
-    let high = 0, medium = 0, low = 0;
-    for (const f of projectResult.files) {
-      const fileResp = f.single_file_response;
-      if (!fileResp) continue;
-      const summary = fileResp.pipeline_raw?.energy_smell_report?.summary;
-      if (summary) {
-        high += summary.high_severity_count || 0;
-        medium += summary.medium_severity_count || 0;
-        low += summary.low_severity_count || 0;
-      } else {
-        const findings = fileResp.pipeline_raw?.energy_smell_report?.findings || fileResp.findings || [];
-        for (const finding of findings) {
-          const sev = String(finding.severity || '').toLowerCase();
-          if (sev === 'high' || sev === 'critical') high++;
-          else if (sev === 'low' || sev === 'info') low++;
-          else medium++;
-        }
-      }
-    }
-    const list = [
-      { name: 'High Severity', count: high, color: '#ef4444' },
-      { name: 'Medium Severity', count: medium, color: '#f59e0b' },
-      { name: 'Low Severity', count: low, color: '#10b981' }
-    ];
-    return list.filter(item => item.count > 0);
-  }, [projectResult]);
 
   const singleFileComplexityData = useMemo(() => {
     if (!result) return [];
@@ -555,11 +798,11 @@ export default function App() {
   const singleFileRefactorComparisonData = useMemo(() => {
     if (!postRefactor || postRefactor.sci_before === undefined) return [];
     return [
-      { name: 'SCI (x100)', Before: Number(((postRefactor.sci_before || 0) * 100).toFixed(2)), After: Number(((postRefactor.sci_after || 0) * 100).toFixed(2)) },
-      { name: 'ESS (0-10)', Before: Number((postRefactor.ess_before || 0).toFixed(2)), After: Number((postRefactor.ess_after || 0).toFixed(2)) },
-      { name: 'Smells (count)', Before: Number(postRefactor.smells_before || 0), After: Number(postRefactor.smells_after || 0) },
-      { name: 'Energy (J)', Before: Number((postRefactor.energy_before_joules || 0).toFixed(2)), After: Number((postRefactor.energy_after_joules || 0).toFixed(2)) },
-      { name: 'CIRS (x1e4)', Before: Number(((postRefactor.cirs_before || 0) * 10000).toFixed(2)), After: Number(((postRefactor.cirs_after || 0) * 10000).toFixed(2)) }
+      { name: 'Structural complexity (SCI)', before: postRefactor.sci_before || 0, after: postRefactor.sci_after || 0, unit: 'index (0–1)', decimals: 4 },
+      { name: 'Energy smell score (ESS)', before: postRefactor.ess_before || 0, after: postRefactor.ess_after || 0, unit: 'score / 10', decimals: 2 },
+      { name: 'Actionable energy smells', before: postRefactor.smells_before || 0, after: postRefactor.smells_after || 0, unit: 'findings', decimals: 0 },
+      { name: 'Modeled energy', before: postRefactor.energy_before_joules || 0, after: postRefactor.energy_after_joules || 0, unit: 'joules', decimals: 3 },
+      { name: 'Research carbon risk (CIRS)', before: postRefactor.cirs_before || 0, after: postRefactor.cirs_after || 0, unit: 'risk index', decimals: 6 }
     ];
   }, [postRefactor]);
 
@@ -568,6 +811,7 @@ export default function App() {
     if (!projectResult?.files) return [];
     return [...projectResult.files]
       .filter(f => f.filename.toLowerCase().includes(tableSearch.toLowerCase()) || f.relative_path.toLowerCase().includes(tableSearch.toLowerCase()))
+      .filter(f => fileStatusFilter === 'all' || f.status === fileStatusFilter)
       .sort((a, b) => {
         const valA = a[sortColumn];
         const valB = b[sortColumn];
@@ -576,34 +820,7 @@ export default function App() {
         }
         return sortAsc ? (valA as number) - (valB as number) : (valB as number) - (valA as number);
       });
-  }, [projectResult, tableSearch, sortColumn, sortAsc]);
-
-  // Project complexity summary metrics
-  const projectComplexitySummary = useMemo(() => {
-    if (!projectResult?.files) return { totalFunctions: 0, maxND: 1, avgFD: 0 };
-    let totalFuncs = 0;
-    let maxND = 1;
-    let sumFD = 0;
-    let validFDCount = 0;
-
-    for (const f of projectResult.files) {
-      const metrics = f.single_file_response?.pipeline_raw?.complexity_metrics;
-      if (metrics) {
-        if (metrics.max_nesting_depth) maxND = Math.max(maxND, metrics.max_nesting_depth);
-        if (metrics.function_density) { sumFD += metrics.function_density; validFDCount++; }
-      }
-      const analysis = f.single_file_response?.pipeline_raw?.analysis;
-      if (analysis && Array.isArray(analysis.functions)) {
-        totalFuncs += analysis.functions.length;
-      }
-    }
-
-    return {
-      totalFunctions: totalFuncs,
-      maxND,
-      avgFD: validFDCount > 0 ? sumFD / validFDCount : 0
-    };
-  }, [projectResult]);
+  }, [projectResult, tableSearch, fileStatusFilter, sortColumn, sortAsc]);
 
   const readFile = async (file: File) => {
     setNotice(null);
@@ -691,7 +908,7 @@ export default function App() {
 
   const scanDataTransferItems = async (items: DataTransferItemList): Promise<ScannedFile[]> => {
     const scanned: ScannedFile[] = [];
-    const skipDirs = new Set(['.git', '__pycache__', 'venv', 'env', 'node_modules', 'dist', 'build', '.pytest_cache', '.idea', '.vscode']);
+    const skipDirs = new Set(['.git', '__pycache__', 'venv', 'env', 'node_modules', 'dist', 'build', 'temp_analysis', 'scratch', '.pytest_cache', '.idea', '.vscode']);
 
     const scanEntry = async (entry: any, currentPath: string = '') => {
       if (!entry) return;
@@ -808,7 +1025,7 @@ export default function App() {
   const handleFolderSelect = async (filesList: FileList) => {
     setNotice(null);
     const pyFiles: ScannedFile[] = [];
-    const skipDirs = ['.git/', '__pycache__/', 'venv/', 'env/', 'node_modules/', 'dist/', 'build/', '.pytest_cache/'];
+    const skipDirs = ['.git/', '__pycache__/', 'venv/', 'env/', 'node_modules/', 'dist/', 'build/', 'temp_analysis/', 'scratch/', '.pytest_cache/'];
 
     for (let i = 0; i < filesList.length; i++) {
       const file = filesList[i];
@@ -1194,7 +1411,9 @@ export default function App() {
                     : `Analyzing ${filename || 'Python source file'}…`}
                 </strong>
                 <p>
-                  Executing AST parsing, EKB smell detection, carbon intensity estimation, and empirical runtime profiling. This may take a few seconds…
+                  {analysisMode === 'project'
+                    ? 'Analyzing eligible Python files in parallel. Large projects can take a few minutes; keep this page open…'
+                    : 'Running AST parsing, EKB smell detection, carbon estimation, and runtime profiling…'}
                 </p>
               </div>
             </div>
@@ -1275,8 +1494,13 @@ export default function App() {
               <h3>High-Impact Files Spotlight</h3>
             </div>
             <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
-              Ranked from real runtime & static metrics
+              Ranked from model estimates and static code metrics
             </span>
+          </div>
+
+          <div className="estimate-note">
+            <strong>How to read these numbers</strong>
+            <span>Energy is estimated from code complexity, hardware profile, and reference power (SCI ÷ HPI × reference power). Carbon is estimated energy converted to kWh × the selected grid intensity. These are model estimates, not direct hardware measurements; project runtime timing is skipped during concurrent analysis.</span>
           </div>
           <div className="top-files-grid">
             {topEnergyFiles[0] ? (
@@ -1331,7 +1555,7 @@ export default function App() {
               <h3>Resource & Emissions Breakdown</h3>
             </div>
             <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
-              Comparison across {projectResult.files.length} analyzed files
+              Top 10 of {projectResult.successful_files} successful files · full list below
             </span>
           </div>
 
@@ -1342,34 +1566,14 @@ export default function App() {
                   <p className="overline">ENERGY CONSUMPTION</p>
                   <h3>Energy Consumption by File (Joules)</h3>
                 </div>
-                <span>Static model estimate</span>
+                  <span>Estimated per run</span>
               </div>
-              {projectFilesEnergyData.length ? (
-                <div className="chart" style={{ marginTop: '16px' }}>
-                  <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={projectFilesEnergyData} margin={{ top: 10, right: 15, left: -10, bottom: 25 }}>
-                      <CartesianGrid vertical={false} stroke="#e7e4dd" strokeDasharray="3 3" />
-                      <XAxis
-                        dataKey="name"
-                        tick={{ fill: '#6d6a63', fontSize: 11 }}
-                        interval={0}
-                        angle={projectFilesEnergyData.length > 5 ? -25 : 0}
-                        textAnchor={projectFilesEnergyData.length > 5 ? 'end' : 'middle'}
-                      />
-                      <YAxis tick={{ fill: '#6d6a63', fontSize: 11 }} />
-                      <Tooltip
-                        cursor={{ fill: '#f3f1eb' }}
-                        formatter={(val: any, _name: any, item: any) => [
-                          `${fixed(val, 3)} Joules (${fixed(item?.payload?.energyKwh, 8)} kWh)`,
-                          'Energy Consumption'
-                        ]}
-                        labelFormatter={(_label, items) => items?.[0]?.payload?.relativePath || _label}
-                      />
-                      <Bar dataKey="energyJoules" name="Energy (J)" fill="#2f6b57" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : <ChartFallback title="No data available for this visualization" />}
+              <RankedMetricBars
+                items={projectFilesEnergyData.map(item => ({ name: item.name, relativePath: item.relativePath, value: item.energyJoules }))}
+                color="#2f6b57"
+                label="Top files by estimated energy"
+                formatValue={value => `${fixed(value, 2)} J`}
+              />
             </section>
 
             <section className="panel">
@@ -1378,34 +1582,14 @@ export default function App() {
                   <p className="overline">CARBON IMPACT</p>
                   <h3>Carbon Impact by File (gCO₂eq)</h3>
                 </div>
-                <span>Grid intensity: {fixed(carbonIntensityToDisplay, 1)} gCO₂eq/kWh</span>
+                  <span>{fixed(carbonIntensityToDisplay, 1)} gCO₂eq/kWh grid</span>
               </div>
-              {projectFilesCarbonData.length ? (
-                <div className="chart" style={{ marginTop: '16px' }}>
-                  <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={projectFilesCarbonData} margin={{ top: 10, right: 15, left: -10, bottom: 25 }}>
-                      <CartesianGrid vertical={false} stroke="#e7e4dd" strokeDasharray="3 3" />
-                      <XAxis
-                        dataKey="name"
-                        tick={{ fill: '#6d6a63', fontSize: 11 }}
-                        interval={0}
-                        angle={projectFilesCarbonData.length > 5 ? -25 : 0}
-                        textAnchor={projectFilesCarbonData.length > 5 ? 'end' : 'middle'}
-                      />
-                      <YAxis tick={{ fill: '#6d6a63', fontSize: 11 }} />
-                      <Tooltip
-                        cursor={{ fill: '#f3f1eb' }}
-                        formatter={(val: any, _name: any, item: any) => [
-                          `${fixed(val, 5)} gCO₂eq (CIRS: ${fixed(item?.payload?.cirs, 6)})`,
-                          'Carbon Footprint'
-                        ]}
-                        labelFormatter={(_label, items) => items?.[0]?.payload?.relativePath || _label}
-                      />
-                      <Bar dataKey="carbonGrams" name="Carbon (gCO₂eq)" fill="#c38c3d" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : <ChartFallback title="No data available for this visualization" />}
+              <RankedMetricBars
+                items={projectFilesCarbonData.map(item => ({ name: item.name, relativePath: item.relativePath, value: item.carbonGrams }))}
+                color="#c38c3d"
+                label="Top files by estimated carbon footprint"
+                formatValue={value => `${fixed(value, 5)} g`}
+              />
             </section>
           </div>
         </section>
@@ -1418,7 +1602,7 @@ export default function App() {
               <h3>SCI, ESS & CIRS Metrics across Files</h3>
             </div>
             <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
-              {projectComplexitySummary.totalFunctions} functions · Max Nesting Depth {projectComplexitySummary.maxND} · Avg FD {fixed(projectComplexitySummary.avgFD, 3)}
+              Top 10 files · sorted highest first
             </span>
           </div>
 
@@ -1429,21 +1613,14 @@ export default function App() {
                   <p className="overline">STRUCTURAL COMPLEXITY</p>
                   <h3>SCI by File</h3>
                 </div>
-                <span>Index 0–1</span>
+                  <span>Lower is simpler</span>
               </div>
-              {projectFilesSciData.length ? (
-                <div className="chart" style={{ marginTop: '14px' }}>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={projectFilesSciData} margin={{ top: 10, right: 10, left: -20, bottom: 25 }}>
-                      <CartesianGrid vertical={false} stroke="#e7e4dd" strokeDasharray="3 3" />
-                      <XAxis dataKey="name" tick={{ fill: '#6d6a63', fontSize: 10 }} interval={0} angle={projectFilesSciData.length > 4 ? -25 : 0} textAnchor={projectFilesSciData.length > 4 ? 'end' : 'middle'} />
-                      <YAxis tick={{ fill: '#6d6a63', fontSize: 10 }} domain={[0, 1]} />
-                      <Tooltip cursor={{ fill: '#f3f1eb' }} formatter={(val: any) => [fixed(val, 4), 'SCI Score']} labelFormatter={(_label, items) => items?.[0]?.payload?.relativePath || _label} />
-                      <Bar dataKey="sci" fill="#2e6956" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : <ChartFallback title="No data available" />}
+              <RankedMetricBars
+                items={projectFilesSciData.map(item => ({ name: item.name, relativePath: item.relativePath, value: item.sci }))}
+                color="#2e6956"
+                label="Top files by structural complexity"
+                formatValue={value => fixed(value, 3)}
+              />
             </section>
 
             <section className="panel">
@@ -1452,21 +1629,14 @@ export default function App() {
                   <p className="overline">ENERGY SMELL SCORE</p>
                   <h3>ESS by File</h3>
                 </div>
-                <span>Score out of 10</span>
+                  <span>Lower is better</span>
               </div>
-              {projectFilesEssData.length ? (
-                <div className="chart" style={{ marginTop: '14px' }}>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={projectFilesEssData} margin={{ top: 10, right: 10, left: -20, bottom: 25 }}>
-                      <CartesianGrid vertical={false} stroke="#e7e4dd" strokeDasharray="3 3" />
-                      <XAxis dataKey="name" tick={{ fill: '#6d6a63', fontSize: 10 }} interval={0} angle={projectFilesEssData.length > 4 ? -25 : 0} textAnchor={projectFilesEssData.length > 4 ? 'end' : 'middle'} />
-                      <YAxis tick={{ fill: '#6d6a63', fontSize: 10 }} domain={[0, 10]} />
-                      <Tooltip cursor={{ fill: '#f3f1eb' }} formatter={(val: any) => [fixed(val, 2), 'ESS Score']} labelFormatter={(_label, items) => items?.[0]?.payload?.relativePath || _label} />
-                      <Bar dataKey="ess" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : <ChartFallback title="No data available" />}
+              <RankedMetricBars
+                items={projectFilesEssData.map(item => ({ name: item.name, relativePath: item.relativePath, value: item.ess }))}
+                color="#f59e0b"
+                label="Top files by energy smell score"
+                formatValue={value => `${fixed(value, 1)} / 10`}
+              />
             </section>
 
             <section className="panel">
@@ -1475,38 +1645,31 @@ export default function App() {
                   <p className="overline">CARBON RISK SCORE</p>
                   <h3>CIRS by File</h3>
                 </div>
-                <span>risk index</span>
+                  <span>Higher is riskier</span>
               </div>
-              {projectFilesCirsData.length ? (
-                <div className="chart" style={{ marginTop: '14px' }}>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={projectFilesCirsData} margin={{ top: 10, right: 10, left: -20, bottom: 25 }}>
-                      <CartesianGrid vertical={false} stroke="#e7e4dd" strokeDasharray="3 3" />
-                      <XAxis dataKey="name" tick={{ fill: '#6d6a63', fontSize: 10 }} interval={0} angle={projectFilesCirsData.length > 4 ? -25 : 0} textAnchor={projectFilesCirsData.length > 4 ? 'end' : 'middle'} />
-                      <YAxis tick={{ fill: '#6d6a63', fontSize: 10 }} />
-                      <Tooltip cursor={{ fill: '#f3f1eb' }} formatter={(val: any) => [fixed(val, 6), 'CIRS']} labelFormatter={(_label, items) => items?.[0]?.payload?.relativePath || _label} />
-                      <Bar dataKey="cirs" fill="#475569" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : <ChartFallback title="No data available" />}
+              <RankedMetricBars
+                items={projectFilesCirsData.map(item => ({ name: item.name, relativePath: item.relativePath, value: item.cirs }))}
+                color="#64748b"
+                label="Top files by carbon impact risk score"
+                formatValue={value => fixed(value, 6)}
+              />
             </section>
           </div>
         </section>
 
-        {/* SECTION 3: FINDINGS & SEVERITY DISTRIBUTION */}
+        {/* SECTION 3: FINDINGS BY CATEGORY */}
         <section className="chart-section">
           <div className="chart-section-title">
             <div>
               <p className="overline">ENERGY SMELL AUDIT</p>
-              <h3>Findings Distribution & Severity Breakdown</h3>
+              <h3>Findings by Category</h3>
             </div>
             <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
               Total {projectResult.total_findings} smells detected
             </span>
           </div>
 
-          <div className="chart-grid-2">
+          <div className="chart-grid-single">
             <section className="panel">
               <div className="panel-head">
                 <div>
@@ -1542,42 +1705,6 @@ export default function App() {
                 <ChartFallback title="No data available for this visualization" message="No findings were reported for any of the categories." />
               )}
             </section>
-
-            <section className="panel">
-              <div className="panel-head">
-                <div>
-                  <p className="overline">SEVERITY AUDIT</p>
-                  <h3>Findings by Severity</h3>
-                </div>
-                <span>Risk levels</span>
-              </div>
-              {projectSeverityDistribution.length > 0 ? (
-                <div className="chart" style={{ marginTop: '14px' }}>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <PieChart>
-                      <Pie
-                        data={projectSeverityDistribution}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={55}
-                        outerRadius={85}
-                        paddingAngle={4}
-                        dataKey="count"
-                        nameKey="name"
-                      >
-                        {projectSeverityDistribution.map((entry, index) => (
-                          <Cell key={`sev-${index}`} fill={entry.color || SEVERITY_COLORS[entry.name] || '#2e6956'} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(val: any, name: any) => [`${val} smell(s)`, name]} />
-                      <Legend verticalAlign="bottom" height={36} iconType="circle" />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <ChartFallback title="No data available for this visualization" message="No severity levels present in the findings data." />
-              )}
-            </section>
           </div>
         </section>
 
@@ -1585,11 +1712,18 @@ export default function App() {
           <div className="panel-head" style={{ alignItems: 'center' }}>
             <div>
               <p className="overline">PROJECT FILE DRILLDOWN</p>
-              <h3>Analyzed Source Files ({sortedProjectFiles.length} of {projectResult.files.length})</h3>
+              <h3>Analyzed Source Files ({sortedProjectFiles.length} shown · {projectResult.successful_files} succeeded · {projectResult.error_files} failed)</h3>
             </div>
-            <div className="search-field" style={{ width: '220px', height: '36px' }}>
-              <Search size={14} />
-              <input value={tableSearch} onChange={e => setTableSearch(e.target.value)} placeholder="Filter file name…" />
+            <div className="file-table-controls">
+              <label className="search-field" style={{ width: '220px', height: '36px' }}>
+                <Search size={14} />
+                <input value={tableSearch} onChange={e => setTableSearch(e.target.value)} placeholder="Search file or folder…" />
+              </label>
+              <select aria-label="Filter files by analysis status" value={fileStatusFilter} onChange={e => setFileStatusFilter(e.target.value as 'all' | 'success' | 'error')}>
+                <option value="all">All statuses</option>
+                <option value="success">Successful</option>
+                <option value="error">Failed</option>
+              </select>
             </div>
           </div>
 
@@ -1623,8 +1757,11 @@ export default function App() {
                 </tr>
               </thead>
               <tbody>
-                {sortedProjectFiles.map((fileItem: any, idx: number) => (
-                  <tr key={idx} className={fileItem.status === 'error' ? 'row-error' : ''}>
+                {sortedProjectFiles.length === 0 && (
+                  <tr><td colSpan={9} className="empty-table-message">No files match the current search and status filter.</td></tr>
+                )}
+                {sortedProjectFiles.map((fileItem: any) => (
+                  <tr key={fileItem.relative_path} className={fileItem.status === 'error' ? 'row-error' : ''}>
                     <td>
                       <div className="file-name-cell">
                         <FileCode2 size={16} />
@@ -1635,12 +1772,15 @@ export default function App() {
                       </div>
                     </td>
                     <td>{fileItem.lines_of_code}</td>
-                    <td><span className={`status-badge ${fileItem.status}`}>{fileItem.status}</span></td>
-                    <td><span className={`findings-badge ${fileItem.findings_count > 0 ? 'has-findings' : ''}`}>{fileItem.findings_count}</span></td>
-                    <td>{fixed(fileItem.sci, 4)}</td>
-                    <td>{fixed(fileItem.ess, 2)}</td>
-                    <td>{fixed(fileItem.cirs, 6)}</td>
-                    <td>{fixed(fileItem.energy_joules, 3)}</td>
+                    <td>
+                      <span className={`status-badge ${fileItem.status}`}>{fileItem.status === 'error' ? 'Failed' : 'Successful'}</span>
+                      {fileItem.status === 'error' && <small className="file-error-reason">{fileItem.error_message || 'Analysis could not be completed.'}</small>}
+                    </td>
+                    <td>{fileItem.status === 'success' ? <span className={`findings-badge ${fileItem.findings_count > 0 ? 'has-findings' : ''}`}>{fileItem.findings_count}</span> : '—'}</td>
+                    <td>{fileItem.status === 'success' ? fixed(fileItem.sci, 4) : '—'}</td>
+                    <td>{fileItem.status === 'success' ? fixed(fileItem.ess, 2) : '—'}</td>
+                    <td>{fileItem.status === 'success' ? fixed(fileItem.cirs, 6) : '—'}</td>
+                    <td>{fileItem.status === 'success' ? fixed(fileItem.energy_joules, 3) : '—'}</td>
                     <td>
                       {fileItem.single_file_response && (
                         <button className="small-button inspect-file-btn" onClick={() => {
@@ -1672,7 +1812,7 @@ export default function App() {
           </div>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             {projectResult && (
-              <button className="secondary-button back-to-project-hero-btn" onClick={() => navigateView('project')}>
+              <button className="secondary-button back-to-project-hero-btn" onClick={() => { setAnalysisMode('project'); navigateView('project'); }}>
                 <ArrowLeft size={16} /> Back to Project Overview
               </button>
             )}
@@ -1756,7 +1896,7 @@ export default function App() {
             <h3>{display(carbon.zone?.display_name, currentZone?.display_name)}</h3>
             <div className="intensity"><strong>{fixed(carbonIntensityToDisplay, 2)}</strong><span>gCO₂eq/kWh</span></div>
             <p className="soft-copy">
-              Single-run footprint: {fixed(((energy.energy_joules || 0) / 3600000.0) * carbonIntensityToDisplay, 6)} gCO₂eq ({fixed(energy.energy_joules, 3)} Joules consumed).
+              Estimated single-run footprint: {fixed(((energy.energy_joules || 0) / 3600000.0) * carbonIntensityToDisplay, 6)} gCO₂eq from {fixed(energy.energy_joules, 3)} model-estimated joules. This is a model estimate, not a direct power measurement.
             </p>
             <button className="text-button" onClick={() => setView('schedule')}>Explore better execution times <ArrowRight size={15} /></button>
           </section>
@@ -1764,22 +1904,10 @@ export default function App() {
           {singleFileRefactorComparisonData.length > 0 ? (
             <section className="panel">
               <div className="panel-head">
-                <div><p className="overline">POST-REFACTOR COMPARISON</p><h3>Metrics Before vs After AST Refactor</h3></div>
-                <span>Safe transformation</span>
+                  <div><p className="overline">GENERATED REFACTOR ESTIMATE</p><h3>Metrics Before vs After</h3></div>
+                  <span>Model estimates; timing is separate</span>
               </div>
-              <div className="chart">
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={singleFileRefactorComparisonData} margin={{ top: 10, right: 15, left: -15, bottom: 0 }}>
-                    <CartesianGrid vertical={false} stroke="#e7e4dd" strokeDasharray="3 3" />
-                    <XAxis dataKey="name" tick={{ fill: '#6d6a63', fontSize: 11 }} />
-                    <YAxis tick={{ fill: '#6d6a63', fontSize: 11 }} />
-                    <Tooltip cursor={{ fill: '#f3f1eb' }} />
-                    <Legend />
-                    <Bar dataKey="Before" fill="#c38c3d" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="After" fill="#2f6b57" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              <MetricComparison rows={singleFileRefactorComparisonData} />
             </section>
           ) : (
             <section className="panel">
@@ -1811,57 +1939,12 @@ export default function App() {
               <div>
                 <p className="overline">PROJECT-LEVEL REFINEMENT QUEUE</p>
                 <h2>{projectResult.project_name} — Recommendations</h2>
-                <p>Aggregated optimization rules surfaced across all {projectResult.total_files} analyzed project files.</p>
               </div>
               <span className="count-pill">{projectAggregatedRecommendations.length} unique rules aggregated</span>
             </div>
 
-            {projectAggregatedRecommendations.length ? (
-              <div className="recommendation-list">
-                {projectAggregatedRecommendations.map((rec, i) => (
-                  <article className="recommendation" key={rec.rule_id || i}>
-                    <span className="finding-number">{String(i + 1).padStart(2, '0')}</span>
-                    <div>
-                      <div className="recommendation-title">
-                        <div>
-                          <p className="overline">{rec.rule_id} · {rec.category}</p>
-                          <h3>{rec.title}</h3>
-                        </div>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <span className="count-pill" style={{ background: 'var(--sage)', color: 'var(--deep)', border: 0 }}>
-                            {rec.affected_files.length} affected file(s) ({rec.occurrences} occurrences)
-                          </span>
-                          <span className={`severity ${String(rec.severity).toLowerCase()}`}>{rec.severity}</span>
-                        </div>
-                      </div>
-                      <p>{rec.explanation || 'This pattern may create unnecessary work at runtime across multiple files.'}</p>
-                      {rec.suggested_fix && <div className="fix"><Check size={16} /><span>{rec.suggested_fix}</span></div>}
+            <ProjectCodeChangesSection projectResult={projectResult} projectFiles={projectFiles} projectZipFile={projectZipFile} />
 
-                      <div style={{ marginTop: '14px' }}>
-                        <button
-                          className="small-button"
-                          onClick={() => setExpandedRecRule(expandedRecRule === rec.rule_id ? null : rec.rule_id)}
-                        >
-                          {expandedRecRule === rec.rule_id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                          {expandedRecRule === rec.rule_id ? 'Hide Affected Files' : `View Affected Code Paths (${rec.affected_files.length} files)`}
-                        </button>
-
-                        {expandedRecRule === rec.rule_id && (
-                          <div style={{ marginTop: '10px', display: 'grid', gap: '6px' }}>
-                            {rec.affected_files.map((aff, idx) => (
-                              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--card)', border: '1px solid var(--line)', padding: '8px 12px', borderRadius: '6px', fontSize: '12px' }}>
-                                <span><FileCode2 size={13} style={{ display: 'inline', marginRight: '6px' }} /> <strong>{aff.filename}</strong> ({aff.relative_path})</span>
-                                <span>Line {aff.line_number ?? '—'} · Confidence: {fixed(aff.confidence, 2)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : <Empty text="No actionable recommendations were detected across the project." />}
           </section>
         ) : result ? (
           <section>
@@ -1869,37 +1952,31 @@ export default function App() {
               <div>
                 <p className="overline">{projectResult ? `INSPECTING FILE IN ${projectResult.project_name.toUpperCase()}` : 'REFINEMENT QUEUE'}</p>
                 <h2>{result.filename || filename} — Recommendations</h2>
-                <p>Ordered by available impact signals from your analysis of {result.filename || filename}.</p>
               </div>
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                 {projectResult && (
-                  <button className="secondary-button back-to-project-hero-btn" onClick={() => navigateView('project')}>
+                  <button className="secondary-button back-to-project-hero-btn" onClick={() => { setAnalysisMode('project'); navigateView('project'); }}>
                     <ArrowLeft size={16} /> Back to Project Overview
                   </button>
                 )}
                 <span className="count-pill">{recommendations.length} recommendations</span>
               </div>
             </div>
-            {recommendations.length ? (
-              <div className="recommendation-list">
-                {recommendations.map((item: any, i: number) => (
-                  <article className="recommendation" key={item.recommendation_id || i}>
-                    <span className="finding-number">{String(i + 1).padStart(2, '0')}</span>
-                    <div>
-                      <div className="recommendation-title">
-                        <div>
-                          <p className="overline">{display(item.rule_id, 'ENERGY PATTERN')}</p>
-                          <h3>{display(item.title || item.name || item.rule_name, 'Review this code path')}</h3>
-                        </div>
-                        <span className={`severity ${String(item.severity || 'medium').toLowerCase()}`}>{display(item.severity, 'review')}</span>
-                      </div>
-                      <p>{display(item.explanation || item.description || item.message, 'This pattern may create unnecessary work at runtime.')}</p>
-                      {item.suggested_fix && <div className="fix"><Check size={16} /><span>{item.suggested_fix}</span></div>}
-                    </div>
-                  </article>
-                ))}
+            <section className="panel suggested-code-section">
+              <div className="panel-head">
+                <div><p className="overline">ISSUE-BY-ISSUE FIXES</p><h3>Suggested Code Changes</h3></div>
+                <span>{resultFindings.length} detected issue(s)</span>
               </div>
-            ) : <Empty text="This analysis did not return actionable recommendations." />}
+              <CodeChangesSection
+                filename={result.filename || filename}
+                sourceCode={code || result.original_code || ''}
+                optimizedCode={result.optimized_code}
+                findings={resultFindings}
+                autoFixes={result.auto_applied_fixes || []}
+                manualFixes={result.manual_fixes || []}
+                recommendations={recommendations}
+              />
+            </section>
           </section>
         ) : null
       )}
@@ -1959,6 +2036,8 @@ export default function App() {
                               <button className="small-button" onClick={() => {
                                 setResult(fileItem.single_file_response);
                                 setFilename(fileItem.filename);
+                                setCode(fileItem.original_code || '');
+                                setAnalysisMode('file');
                                 navigateView('impact');
                               }}>
                                 Inspect AST Refactor <ArrowRight size={13} />
@@ -1982,7 +2061,7 @@ export default function App() {
                 <p>AST transformation results, post-refactor estimation comparison, and sandboxed execution speedup for {result.filename || filename}.</p>
               </div>
               {projectResult && (
-                <button className="secondary-button back-to-project-hero-btn" onClick={() => navigateView('project')}>
+                <button className="secondary-button back-to-project-hero-btn" onClick={() => { setAnalysisMode('project'); navigateView('project'); }}>
                   <ArrowLeft size={16} /> Back to Project Overview
                 </button>
               )}
@@ -1995,8 +2074,18 @@ export default function App() {
                 <Metric label="Energy Smells (Before → After)" metric={`${postRefactor.smells_before ?? 0} → ${postRefactor.smells_after ?? 0}`} unit={`actionable (conf ≥ 0.5) · burden ${fixed(postRefactor.smell_burden_before, 2)} → ${fixed(postRefactor.smell_burden_after, 2)}`} tone="amber" />
                 <Metric label="Energy (Before → After)" metric={`${fixed(postRefactor.energy_before_joules, 3)} → ${fixed(postRefactor.energy_after_joules, 3)}`} unit="joules" tone="amber" />
                 <Metric label="Research CIRS (Before → After)" metric={`${fixed(postRefactor.cirs_before, 6)} → ${fixed(postRefactor.cirs_after, 6)}`} unit="risk index" tone="ink" />
-                <Metric label="Measured Speedup" metric={postRefactor.measured_reduction_percent !== undefined ? `${fixed(postRefactor.measured_reduction_percent, 1)}%` : '—'} unit={postRefactor.measurement_reliability || 'reliable'} tone="blue" />
+                <Metric label="Measured Speedup" metric={postRefactor.measurement_reliability === 'unavailable' ? '—' : postRefactor.measured_reduction_percent !== undefined ? `${fixed(postRefactor.measured_reduction_percent, 1)}%` : '—'} unit={postRefactor.measurement_reliability || 'reliability unavailable'} tone="blue" />
               </div>
+            )}
+
+            {singleFileRefactorComparisonData.length > 0 && (
+              <section className="panel" style={{ marginBottom: '18px' }}>
+                <div className="panel-head">
+                  <div><p className="overline">BEFORE / AFTER</p><h3>What changed in the estimate</h3></div>
+                  <span>Each row keeps its own unit</span>
+                </div>
+                <MetricComparison rows={singleFileRefactorComparisonData} />
+              </section>
             )}
 
             <div className="impact-card">
@@ -2004,7 +2093,15 @@ export default function App() {
               <div>
                 <p className="overline">NEXT BEST STEP</p>
                 <h3>Apply the safe AST recommendations, then verify with a fresh run.</h3>
-                <p>The report measures both static structural complexity reduction and sandboxed execution runtime speedups.</p>
+                <p>
+                  {result.auto_applied_fixes?.length
+                    ? `${result.auto_applied_fixes.length} safe AST change(s) were generated. Your uploaded source file is not overwritten.`
+                    : 'No safe automatic source change was generated for this file. The original remains unchanged; review the manual recommendations.'}
+                  {' '}Energy, SCI, ESS, and CIRS are model estimates.{' '}
+                  {projectResult
+                    ? 'Runtime timing is skipped during parallel project analysis; analyze this file individually for an uncontended timing comparison.'
+                    : 'Runtime speedup is a separate timing comparison and can vary between runs.'}
+                </p>
               </div>
               <button className="primary-button" onClick={() => navigateView('recommendations')}>Review fixes <ArrowRight size={17} /></button>
             </div>
@@ -2116,10 +2213,6 @@ export default function App() {
 function Metric({ label, metric, unit, tone }: { label: string; metric: string; unit: string; tone: string }) {
   return <article className={`metric ${tone}`}><p>{label}</p><strong>{metric}</strong><span>{unit}</span></article>;
 }
-function Empty({ text }: { text: string }) {
-  return <div className="empty-panel"><Check size={21} /><div><h3>Nothing urgent surfaced.</h3><p>{text}</p></div></div>;
-}
-
 function formatWindowTime(isoStr?: string): string {
   if (!isoStr) return '—';
   try {
@@ -2176,17 +2269,27 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
 
   const recTimeStr = formatWindowTime(forecast.recommended_execution_time);
   const recTimeIso = forecast.recommended_execution_time;
+  const nowMs = Date.now();
+  const currentPointIndex = hourly.reduce((bestIndex: number, item: any, index: number) => {
+    const thisDistance = Math.abs(Date.parse(item.timestamp) - nowMs);
+    const bestDistance = Math.abs(Date.parse(hourly[bestIndex]?.timestamp) - nowMs);
+    return thisDistance < bestDistance ? index : bestIndex;
+  }, 0);
+  const currentPointDistance = Math.abs(Date.parse(hourly[currentPointIndex]?.timestamp) - nowMs);
+  const hasCurrentForecastPoint = Number.isFinite(currentPointDistance) && currentPointDistance <= 90 * 60 * 1000;
 
-  const chartData = hourly.map((item: any) => {
+  const chartData = hourly.map((item: any, index: number) => {
     const isOptimal = item.timestamp === recTimeIso;
     return {
       time: formatHour(item.timestamp),
       intensity: item.carbon_intensity,
       emissions: item.emissions_g,
       isOptimal,
+      isCurrent: hasCurrentForecastPoint && index === currentPointIndex,
       rawTs: item.timestamp
     };
   });
+  const currentPoint = chartData.find((item: any) => item.isCurrent);
 
   return (
     <div style={{ display: 'grid', gap: '20px', marginTop: '20px' }}>
@@ -2233,7 +2336,8 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
         <div className="panel-head">
           <div>
             <p className="overline">24-HOUR CARBON INTENSITY FORECAST</p>
-            <h3>Regional Grid Carbon Intensity Forecast (gCO₂eq/kWh)</h3>
+            <h3>Hourly Grid Carbon Intensity</h3>
+            <p className="forecast-chart-help">Red marks the current forecast hour, green the recommended hour, and blue the other hours. The dashed red line shows current grid intensity.</p>
           </div>
           <span style={{ fontSize: '12px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
             {hourly.length} forecast points
@@ -2245,11 +2349,11 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
             <BarChart data={chartData} margin={{ top: 20, right: 15, left: -15, bottom: 10 }}>
               <CartesianGrid vertical={false} stroke="#e7e4dd" strokeDasharray="3 3" />
               <XAxis dataKey="time" tick={{ fill: '#6d6a63', fontSize: 11 }} />
-              <YAxis tick={{ fill: '#6d6a63', fontSize: 11 }} domain={['dataMin - 10', 'dataMax + 10']} />
+              <YAxis tick={{ fill: '#6d6a63', fontSize: 11 }} domain={[0, 'dataMax + 50']} />
               <Tooltip
                 cursor={{ fill: '#f3f1eb' }}
                 formatter={(val: any, _name: any, item: any) => [
-                  `${val} gCO₂eq/kWh (${fixed(item?.payload?.emissions, 6)} g workload footprint)`,
+                  `${val} gCO₂eq/kWh (${fixed(item?.payload?.emissions, 6)} g workload footprint)${item?.payload?.isCurrent ? ' · Current hour' : ''}${item?.payload?.isOptimal ? ' · Recommended hour' : ''}`,
                   'Grid Carbon Intensity'
                 ]}
                 labelFormatter={(label: any, items: readonly any[]) => {
@@ -2257,17 +2361,26 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
                   return ts ? formatWindowTime(ts) : String(label || '');
                 }}
               />
+              {currentPoint && (
+                <ReferenceLine x={currentPoint.time} stroke="#c53030" strokeWidth={2} strokeDasharray="3 3" label={{ value: 'NOW', fill: '#c53030', fontSize: 10, position: 'insideTop' }} />
+              )}
               {forecast.current_carbon_intensity && (
                 <ReferenceLine
                   y={forecast.current_carbon_intensity}
                   stroke="#ef4444"
+                  strokeWidth={2}
                   strokeDasharray="4 4"
-                  label={{ value: `Current (${fixed(forecast.current_carbon_intensity, 1)})`, fill: '#ef4444', fontSize: 10, position: 'top' }}
+                  label={{ value: `Current ${fixed(forecast.current_carbon_intensity, 1)}`, fill: '#c53030', fontSize: 10, position: 'top' }}
                 />
               )}
               <Bar dataKey="intensity" name="Grid Intensity" radius={[4, 4, 0, 0]}>
                 {chartData.map((entry: any, index: number) => (
-                  <Cell key={`cell-${index}`} fill={entry.isOptimal ? '#10b981' : '#2f6b57'} />
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={entry.isCurrent ? '#d64545' : entry.isOptimal ? '#12a66a' : '#4f83cc'}
+                    stroke={entry.isCurrent && entry.isOptimal ? '#08764a' : entry.isCurrent ? '#a32828' : entry.isOptimal ? '#08764a' : '#3768aa'}
+                    strokeWidth={entry.isCurrent && entry.isOptimal ? 3 : 1}
+                  />
                 ))}
               </Bar>
             </BarChart>
@@ -2276,16 +2389,20 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
 
         <div className="legend-custom-wrap">
           <div className="legend-custom-item">
-            <span className="legend-custom-dot" style={{ background: '#10b981' }}></span>
-            <span>Recommended Green Window</span>
+            <span className="legend-custom-dot" style={{ background: '#d64545' }}></span>
+            <span>Current hour</span>
           </div>
           <div className="legend-custom-item">
-            <span className="legend-custom-dot" style={{ background: '#2f6b57' }}></span>
-            <span>24h Regional Grid Forecast</span>
+            <span className="legend-custom-dot" style={{ background: '#12a66a' }}></span>
+            <span>Recommended hour</span>
           </div>
           <div className="legend-custom-item">
-            <span className="legend-custom-dot" style={{ background: '#ef4444' }}></span>
-            <span>Current Grid Intensity Reference</span>
+            <span className="legend-custom-dot" style={{ background: '#4f83cc' }}></span>
+            <span>Other forecast hours</span>
+          </div>
+          <div className="legend-custom-item">
+            <span className="legend-custom-line" style={{ borderColor: '#c53030' }}></span>
+            <span>Current level</span>
           </div>
         </div>
       </section>

@@ -75,6 +75,7 @@ class PostRefactorEstimation(BaseModel):
 
 class AnalyzeResponse(BaseModel):
     filename: str = Field(..., description="Name of the analyzed file")
+    original_code: str | None = Field(None, description="Original uploaded Python source, preserved for source-based fix display")
     timestamp: str = Field(..., description="ISO 8601 timestamp of when the analysis occurred")
     pipeline_raw: dict[str, Any] = Field(..., description="Raw pipeline execution results")
     research_metrics: ResearchMetricsSchema = Field(..., description="Experimental Version 1 research metrics")
@@ -91,6 +92,7 @@ class AnalyzeResponse(BaseModel):
 class ProjectFileResult(BaseModel):
     filename: str = Field(..., description="Name of the file")
     relative_path: str = Field(..., description="Relative path in project")
+    original_code: str | None = Field(None, description="Original uploaded Python source, preserved for source-based fix display")
     lines_of_code: int = Field(0, description="Lines of code in file")
     status: str = Field("success", description="Analysis status: success or error")
     error_message: str | None = Field(None, description="Error message if analysis failed")

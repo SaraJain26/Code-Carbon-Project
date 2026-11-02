@@ -10,7 +10,9 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
-        timeout: 120000,
+        // Analysis runs multiple static passes and sandbox measurements. Keep
+        // the proxy connection alive long enough for larger uploads to finish.
+        timeout: 600000,
         rewrite: (path) => path.replace(/^\/api/, '')
       }
     }

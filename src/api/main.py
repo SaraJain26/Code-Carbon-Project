@@ -13,6 +13,7 @@ import time
 import zipfile
 import io
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,7 @@ import ast
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, APIRouter
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.concurrency import run_in_threadpool
 from carbon import get_carbon_provider, MockCarbonIntensityProvider
 from pipeline import PredictivePipeline
 from recommendation.engine import RecommendationEngine
@@ -130,7 +132,8 @@ def run_single_file_analysis(
     filename: str,
     source_code: str,
     zone: str = "DK-DK1",
-    use_global_average: bool = True
+    use_global_average: bool = True,
+    measure_runtime: bool = True,
 ) -> dict[str, Any]:
     """
     Core single file analysis logic: static analysis, carbon estimation, AST transformation, and sandboxed measurement.
@@ -183,11 +186,24 @@ def run_single_file_analysis(
         transform_res = transformer.transform(source_code, findings=raw_findings)
 
         # Automatically execute real measurement in isolated sandboxed subprocesses
-        sandbox_executor = SandboxedRuntimeExecutor(timeout_sec=2.0)
-        measured_runtime = sandbox_executor.measure_comparison(
-            original_code=source_code,
-            optimized_code=transform_res.optimized_code
-        )
+        if measure_runtime:
+            sandbox_executor = SandboxedRuntimeExecutor(timeout_sec=2.0)
+            measured_runtime = sandbox_executor.measure_comparison(
+                original_code=source_code,
+                optimized_code=transform_res.optimized_code
+            )
+        else:
+            measured_runtime = {
+                "is_sandboxed": False,
+                "measurement_reliability": "unavailable",
+                "reliability_threshold_ms": SandboxedRuntimeExecutor.RELIABILITY_THRESHOLD_MS,
+                "reliability_note": (
+                    "Runtime timing was skipped for project analysis because files were analyzed concurrently; "
+                    "run this file individually for an uncontended timing comparison."
+                ),
+                "energy_method": "Not measured during concurrent project analysis",
+                "measured_savings": {"time_reduction_percent": 0.0, "energy_reduction_percent": 0.0},
+            }
 
         # Post-Recommendation Estimation Logic (Re-run static analysis & EKB on refactored code)
         temp_opt_path = workspace_temp_dir / f"temp_opt_{datetime.now().timestamp()}_{filename}"
@@ -278,8 +294,14 @@ def run_single_file_analysis(
             }
 
             # Build rule-aligned findings comparison matching recommendation report
-            auto_fixed_rules = {fix.get("rule_id") for fix in transform_res.auto_applied_fixes}
-            findings_after_rules = {f.rule_id for f in smell_report_after.findings}
+            findings_after_confidence: dict[str, float] = {}
+            for finding in smell_report_after.findings:
+                rule_id = finding.rule_id
+                confidence = float(getattr(finding.confidence, "value", 0.0))
+                findings_after_confidence[rule_id] = max(
+                    confidence,
+                    findings_after_confidence.get(rule_id, 0.0),
+                )
 
             findings_comparison = []
             for rec in recommendation_report.recommendations:
@@ -287,12 +309,10 @@ def run_single_file_analysis(
                 if f_line is None and hasattr(rec, "findings") and rec.findings:
                     f_line = getattr(rec.findings[0], "line_number", None)
 
-                is_auto_fixed = rec.rule_id in auto_fixed_rules
-                still_present = rec.rule_id in findings_after_rules
-                is_resolved = is_auto_fixed or (not still_present)
+                confidence_after = findings_after_confidence.get(rec.rule_id, 0.0)
+                is_resolved = rec.rule_id not in findings_after_confidence
 
                 conf_before = getattr(rec, "confidence", 1.0)
-                conf_after = 0.0 if is_resolved else conf_before
 
                 rule_human_name = getattr(rec, "title", EKB_RULE_NAMES.get(rec.rule_id, rec.rule_id))
 
@@ -302,7 +322,7 @@ def run_single_file_analysis(
                     "category": str(getattr(rec, "category", "Code Structure")),
                     "line_number": f_line,
                     "confidence_before": round(conf_before, 2),
-                    "confidence_after": round(conf_after, 2),
+                    "confidence_after": round(confidence_after, 2),
                     "is_resolved": is_resolved
                 })
 
@@ -404,6 +424,7 @@ def run_single_file_analysis(
 
         response = {
             "filename": filename,
+            "original_code": source_code,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "pipeline_raw": serialize_value(result),
             "research_metrics": {
@@ -454,11 +475,152 @@ async def analyze_file(
             ast.parse(source_code, filename=file.filename)
         except SyntaxError as se:
             raise HTTPException(status_code=400, detail=f"Python syntax error: {se}")
-        return run_single_file_analysis(file.filename, source_code, zone=zone, use_global_average=use_global_average)
+        # The analysis pipeline performs CPU-heavy AST work and starts sandbox
+        # subprocesses. Keep it off the event loop so the API can continue
+        # serving requests while an uploaded file is being analyzed.
+        return await run_in_threadpool(
+            run_single_file_analysis,
+            file.filename,
+            source_code,
+            zone=zone,
+            use_global_average=use_global_average,
+        )
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+def run_project_analysis(
+    items_to_analyze: list[tuple[str, bytes]],
+    project_name: str,
+    zone: str,
+    use_global_average: bool,
+    start_time: float,
+) -> dict[str, Any]:
+    if not items_to_analyze:
+        return {
+            "project_name": project_name,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "total_files": 0,
+            "successful_files": 0,
+            "error_files": 0,
+            "total_lines_of_code": 0,
+            "total_findings": 0,
+            "avg_sci": 0.0,
+            "avg_ess": 0.0,
+            "avg_cirs": 0.0,
+            "total_cirs": 0.0,
+            "total_energy_joules": 0.0,
+            "total_energy_kwh": 0.0,
+            "total_analysis_time_sec": round(time.time() - start_time, 3),
+            "files": []
+        }
+
+    def analyze_project_file(item: tuple[str, bytes]) -> dict[str, Any]:
+        rel_path, c_bytes = item
+        f_start = time.time()
+        filename_only = Path(rel_path).name
+        code_str = c_bytes.decode("utf-8", errors="replace")
+        loc = len([line for line in code_str.splitlines() if line.strip()])
+
+        try:
+            res_dict = run_single_file_analysis(
+                filename_only,
+                code_str,
+                zone=zone,
+                use_global_average=use_global_average,
+                measure_runtime=False,
+            )
+            f_time = round(time.time() - f_start, 3)
+
+            f_sci = res_dict["post_refactor_estimation"]["sci_before"]
+            f_ess = res_dict["research_metrics"]["energy_smell_score"]
+            f_cirs = res_dict["research_metrics"]["carbon_impact_risk_score"]
+            f_joules = res_dict["post_refactor_estimation"]["energy_before_joules"]
+            raw_summary = res_dict.get("pipeline_raw", {}).get("energy_smell_report", {}).get("summary", {})
+            if "total_findings" in raw_summary:
+                f_findings = int(raw_summary["total_findings"])
+            else:
+                recs = res_dict.get("recommendations", {})
+                if isinstance(recs, dict):
+                    f_findings = len(recs.get("recommendations", []))
+                elif isinstance(recs, list):
+                    f_findings = len(recs)
+                else:
+                    f_findings = 0
+
+            return {
+                "filename": filename_only,
+                "relative_path": rel_path,
+                "lines_of_code": loc,
+                "status": "success",
+                "error_message": None,
+                "original_code": code_str,
+                "findings_count": f_findings,
+                "sci": round(f_sci, 4),
+                "ess": round(f_ess, 2),
+                "cirs": round(f_cirs, 6),
+                "energy_joules": round(f_joules, 4),
+                "analysis_time_sec": f_time,
+                "single_file_response": res_dict
+            }
+        except Exception as exc:
+            f_time = round(time.time() - f_start, 3)
+            return {
+                "filename": filename_only,
+                "relative_path": rel_path,
+                "lines_of_code": loc,
+                "status": "error",
+                "error_message": str(exc),
+                "findings_count": 0,
+                "sci": 0.0,
+                "ess": 0.0,
+                "cirs": 0.0,
+                "energy_joules": 0.0,
+                "analysis_time_sec": f_time,
+                "single_file_response": None
+            }
+
+    # Keep project uploads bounded in time. Each file is independent, and the
+    # stable map order preserves the archive's file order in the response.
+    worker_count = min(4, len(items_to_analyze))
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        file_results = list(executor.map(analyze_project_file, items_to_analyze))
+
+    successful_results = [item for item in file_results if item["status"] == "success"]
+    success_count = len(successful_results)
+    error_count = len(file_results) - success_count
+    sci_list = [item["sci"] for item in successful_results]
+    ess_list = [item["ess"] for item in successful_results]
+    cirs_list = [item["cirs"] for item in successful_results]
+    total_joules = sum(item["energy_joules"] for item in successful_results)
+    total_loc = sum(item["lines_of_code"] for item in file_results)
+    total_findings = sum(item["findings_count"] for item in successful_results)
+
+    total_time = round(time.time() - start_time, 3)
+    avg_sci = round(sum(sci_list) / len(sci_list), 4) if sci_list else 0.0
+    avg_ess = round(sum(ess_list) / len(ess_list), 2) if ess_list else 0.0
+    avg_cirs = round(sum(cirs_list) / len(cirs_list), 6) if cirs_list else 0.0
+    total_cirs = round(sum(cirs_list), 6) if cirs_list else 0.0
+
+    return {
+        "project_name": project_name,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "total_files": len(items_to_analyze),
+        "successful_files": success_count,
+        "error_files": error_count,
+        "total_lines_of_code": total_loc,
+        "total_findings": total_findings,
+        "avg_sci": avg_sci,
+        "avg_ess": avg_ess,
+        "avg_cirs": avg_cirs,
+        "total_cirs": total_cirs,
+        "total_energy_joules": round(total_joules, 4),
+        "total_energy_kwh": round(total_joules / 3_600_000.0, 8),
+        "total_analysis_time_sec": total_time,
+        "files": file_results
+    }
 
 
 @router.post("/analyze-project", response_model=ProjectAnalyzeResponse, tags=["Analysis"])
@@ -489,7 +651,7 @@ async def analyze_project(
                             continue
                         name = zip_info.filename
                         parts = Path(name).parts
-                        if any(p.startswith(".") or p in ("__pycache__", "venv", "env", "node_modules", "dist", "build", ".pytest_cache") for p in parts):
+                        if any(p.startswith(".") or p in ("__pycache__", "venv", "env", "node_modules", "dist", "build", "temp_analysis", "scratch", ".pytest_cache") for p in parts):
                             continue
                         if name.lower().endswith(".py"):
                             file_data = zf.read(zip_info)
@@ -508,126 +670,14 @@ async def analyze_project(
                 clean_path = f.filename.replace("\\", "/")
                 items_to_analyze.append((clean_path, c_bytes))
 
-    if not items_to_analyze:
-        return {
-            "project_name": project_name,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "total_files": 0,
-            "successful_files": 0,
-            "error_files": 0,
-            "total_lines_of_code": 0,
-            "total_findings": 0,
-            "avg_sci": 0.0,
-            "avg_ess": 0.0,
-            "avg_cirs": 0.0,
-            "total_cirs": 0.0,
-            "total_energy_joules": 0.0,
-            "total_energy_kwh": 0.0,
-            "total_analysis_time_sec": round(time.time() - start_time, 3),
-            "files": []
-        }
-
-    file_results = []
-    sci_list = []
-    ess_list = []
-    cirs_list = []
-    total_joules = 0.0
-    total_loc = 0
-    total_findings = 0
-    success_count = 0
-    error_count = 0
-
-    for rel_path, c_bytes in items_to_analyze:
-        f_start = time.time()
-        filename_only = Path(rel_path).name
-        code_str = c_bytes.decode("utf-8", errors="replace")
-        loc = len([line for line in code_str.splitlines() if line.strip()])
-
-        try:
-            res_dict = run_single_file_analysis(filename_only, code_str, zone=zone, use_global_average=use_global_average)
-            f_time = round(time.time() - f_start, 3)
-
-            f_sci = res_dict["post_refactor_estimation"]["sci_before"]
-            f_ess = res_dict["research_metrics"]["energy_smell_score"]
-            f_cirs = res_dict["research_metrics"]["carbon_impact_risk_score"]
-            f_joules = res_dict["post_refactor_estimation"]["energy_before_joules"]
-            raw_summary = res_dict.get("pipeline_raw", {}).get("energy_smell_report", {}).get("summary", {})
-            if "total_findings" in raw_summary:
-                f_findings = int(raw_summary["total_findings"])
-            else:
-                recs = res_dict.get("recommendations", {})
-                if isinstance(recs, dict):
-                    f_findings = len(recs.get("recommendations", []))
-                elif isinstance(recs, list):
-                    f_findings = len(recs)
-                else:
-                    f_findings = 0
-
-            sci_list.append(f_sci)
-            ess_list.append(f_ess)
-            cirs_list.append(f_cirs)
-            total_joules += f_joules
-            total_loc += loc
-            total_findings += f_findings
-            success_count += 1
-
-            file_results.append({
-                "filename": filename_only,
-                "relative_path": rel_path,
-                "lines_of_code": loc,
-                "status": "success",
-                "error_message": None,
-                "findings_count": f_findings,
-                "sci": round(f_sci, 4),
-                "ess": round(f_ess, 2),
-                "cirs": round(f_cirs, 6),
-                "energy_joules": round(f_joules, 4),
-                "analysis_time_sec": f_time,
-                "single_file_response": res_dict
-            })
-        except Exception as exc:
-            f_time = round(time.time() - f_start, 3)
-            error_count += 1
-            total_loc += loc
-            file_results.append({
-                "filename": filename_only,
-                "relative_path": rel_path,
-                "lines_of_code": loc,
-                "status": "error",
-                "error_message": str(exc),
-                "findings_count": 0,
-                "sci": 0.0,
-                "ess": 0.0,
-                "cirs": 0.0,
-                "energy_joules": 0.0,
-                "analysis_time_sec": f_time,
-                "single_file_response": None
-            })
-
-    total_time = round(time.time() - start_time, 3)
-    avg_sci = round(sum(sci_list) / len(sci_list), 4) if sci_list else 0.0
-    avg_ess = round(sum(ess_list) / len(ess_list), 2) if ess_list else 0.0
-    avg_cirs = round(sum(cirs_list) / len(cirs_list), 6) if cirs_list else 0.0
-    total_cirs = round(sum(cirs_list), 6) if cirs_list else 0.0
-
-    return {
-        "project_name": project_name,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "total_files": len(items_to_analyze),
-        "successful_files": success_count,
-        "error_files": error_count,
-        "total_lines_of_code": total_loc,
-        "total_findings": total_findings,
-        "avg_sci": avg_sci,
-        "avg_ess": avg_ess,
-        "avg_cirs": avg_cirs,
-        "total_cirs": total_cirs,
-        "total_energy_joules": round(total_joules, 4),
-        "total_energy_kwh": round(total_joules / 3_600_000.0, 8),
-        "total_analysis_time_sec": total_time,
-        "files": file_results
-    }
-
+    return await run_in_threadpool(
+        run_project_analysis,
+        items_to_analyze,
+        project_name,
+        zone,
+        use_global_average,
+        start_time,
+    )
 
 @router.get("/download-optimized/{file_name}", tags=["Analysis"])
 def download_optimized_file(file_name: str) -> FileResponse:

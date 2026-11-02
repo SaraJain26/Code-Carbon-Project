@@ -10,6 +10,7 @@ Applies safe AST-level automated code refactorings for eligible EKB rules:
 from __future__ import annotations
 
 import ast
+import textwrap
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -21,6 +22,10 @@ class TransformationFix:
     description: str
     line_number: int | None
     is_auto_applied: bool
+    line_start: int | None = None
+    line_end: int | None = None
+    original_code: str | None = None
+    replacement_code: str | None = None
 
 
 @dataclass
@@ -40,10 +45,27 @@ class _LoopInvariantHoister(ast.NodeTransformer):
     3. Invariant temporary allocations (EKB-MEM-001)
     """
 
-    def __init__(self) -> None:
+    def __init__(self, source_code: str = "") -> None:
         super().__init__()
         self.auto_fixes: list[TransformationFix] = []
         self.manual_fixes: list[TransformationFix] = []
+        self.source_lines = source_code.splitlines(keepends=True)
+
+    def _source_fragment(self, node: ast.AST) -> tuple[int | None, int | None, str]:
+        line_start = getattr(node, "lineno", None)
+        line_end = getattr(node, "end_lineno", line_start)
+        if not isinstance(line_start, int) or not isinstance(line_end, int):
+            return None, None, ""
+        fragment = "".join(self.source_lines[line_start - 1:line_end]).rstrip("\r\n")
+        return line_start, line_end, fragment
+
+    def _replacement_fragment(self, node: ast.AST, line_start: int | None) -> str:
+        rendered = ast.unparse(node)
+        if not isinstance(line_start, int) or not 0 < line_start <= len(self.source_lines):
+            return rendered
+        original_line = self.source_lines[line_start - 1].rstrip("\r\n")
+        indent = original_line[:len(original_line) - len(original_line.lstrip())]
+        return textwrap.indent(rendered, indent) if indent else rendered
 
     def _get_assigned_and_loop_vars(self, loop_node: ast.For | ast.While) -> set[str]:
         loop_vars: set[str] = set()
@@ -64,6 +86,14 @@ class _LoopInvariantHoister(ast.NodeTransformer):
                     for name_node in ast.walk(target):
                         if isinstance(name_node, ast.Name):
                             loop_vars.add(name_node.id)
+        # A call can mutate any object passed to it or reachable from it. In
+        # loops containing calls, conservatively reject hoisting expressions
+        # that depend on names from the loop.
+        if any(isinstance(node, ast.Call) for node in ast.walk(loop_node)):
+            loop_vars.update(
+                node.id for node in ast.walk(loop_node)
+                if isinstance(node, ast.Name)
+            )
         return loop_vars
 
     def _is_expression_invariant(self, expr: ast.AST, loop_vars: set[str]) -> bool:
@@ -73,16 +103,10 @@ class _LoopInvariantHoister(ast.NodeTransformer):
         for node in ast.walk(expr):
             if isinstance(node, ast.Name) and node.id in loop_vars:
                 return False
-            if isinstance(node, ast.Call):
-                # Avoid hoisting arbitrary non-pure function calls (e.g. print, write, random, time)
-                if isinstance(node.func, ast.Name) and node.func.id in {
-                    "print", "write", "append", "input", "next", "read", "readline", "readlines"
-                }:
-                    return False
-                if isinstance(node.func, ast.Attribute) and node.func.attr in {
-                    "write", "append", "extend", "pop", "push", "read", "readline"
-                }:
-                    return False
+            # Calls, attribute reads, and subscripts may have side effects or
+            # return different values between iterations. Keep them in place.
+            if isinstance(node, (ast.Call, ast.Attribute, ast.Subscript)):
+                return False
         return True
 
     def visit_For(self, node: ast.For) -> Any:
@@ -96,6 +120,8 @@ class _LoopInvariantHoister(ast.NodeTransformer):
     def _transform_loop(self, node: ast.For | ast.While) -> Any:
         hoisted_before: list[ast.stmt] = []
         new_body: list[ast.stmt] = []
+        loop_fix_start = len(self.auto_fixes)
+        line_start, line_end, original_code = self._source_fragment(node)
 
         # Step A: Check for file open context manager inside loop: with open(...) as f:
         file_with_node: ast.With | None = None
@@ -109,6 +135,25 @@ class _LoopInvariantHoister(ast.NodeTransformer):
                     file_with_node = node.body[0]
 
         if file_with_node is not None:
+            open_call = file_with_node.items[0].context_expr
+            path = open_call.args[0] if open_call.args else None
+            mode = open_call.args[1] if len(open_call.args) == 2 else None
+            append_modes = {"a", "ab", "at", "a+", "ab+", "at+"}
+            safe_open = (
+                isinstance(open_call.func, ast.Name)
+                and open_call.func.id == "open"
+                and not open_call.keywords
+                and isinstance(path, ast.Constant)
+                and isinstance(path.value, str)
+                and isinstance(mode, ast.Constant)
+                and mode.value in append_modes
+            )
+            if not safe_open:
+                # Moving read, truncate, or default-mode opens changes file
+                # position, path evaluation, or truncation behavior across iterations.
+                file_with_node = None
+
+        if file_with_node is not None:
             # We transform:
             # for item in items:
             #     with open(...) as f:
@@ -118,6 +163,7 @@ class _LoopInvariantHoister(ast.NodeTransformer):
             #     for item in items:
             #         f.write(item)
             lineno = getattr(file_with_node, "lineno", node.lineno)
+            line_start, line_end, original_code = self._source_fragment(node)
             self.auto_fixes.append(
                 TransformationFix(
                     rule_id="EKB-IO-001",
@@ -125,6 +171,9 @@ class _LoopInvariantHoister(ast.NodeTransformer):
                     description=f"Hoisted file open context manager at line {lineno} outside loop body.",
                     line_number=lineno,
                     is_auto_applied=True,
+                    line_start=line_start,
+                    line_end=line_end,
+                    original_code=original_code,
                 )
             )
             # Create outer with block wrapping loop with inner body
@@ -147,6 +196,7 @@ class _LoopInvariantHoister(ast.NodeTransformer):
                 type_comment=getattr(file_with_node, "type_comment", None),
             )
             ast.copy_location(outer_with, node)
+            self.auto_fixes[-1].replacement_code = self._replacement_fragment(outer_with, line_start)
             return outer_with
 
         # Step B: Hoist invariant computations & allocations inside loop body
@@ -184,6 +234,9 @@ class _LoopInvariantHoister(ast.NodeTransformer):
                             description=f"Hoisted loop-invariant assignment `{ast.unparse(stmt).strip()}` at line {lineno} outside loop.",
                             line_number=lineno,
                             is_auto_applied=True,
+                            line_start=line_start,
+                            line_end=line_end,
+                            original_code=original_code,
                         )
                     )
                     hoisted_before.append(stmt)
@@ -193,6 +246,10 @@ class _LoopInvariantHoister(ast.NodeTransformer):
 
         if hoisted_before:
             node.body = new_body
+            replacement_module = ast.Module(body=hoisted_before + [node], type_ignores=[])
+            replacement_code = self._replacement_fragment(replacement_module, line_start)
+            for fix in self.auto_fixes[loop_fix_start:]:
+                fix.replacement_code = replacement_code
             return hoisted_before + [node]
 
         return node
@@ -244,7 +301,7 @@ class ASTCodeTransformer:
                 },
             )
 
-        hoister = _LoopInvariantHoister()
+        hoister = _LoopInvariantHoister(code)
         transformed_tree = hoister.visit(tree)
         transformed_tree = hoister.visit(transformed_tree)
         ast.fix_missing_locations(transformed_tree)
@@ -257,15 +314,20 @@ class ASTCodeTransformer:
             except Exception:
                 optimized_code = code
 
+        verified_fixes = hoister.auto_fixes if optimized_code != code else []
         auto_applied = [
             {
                 "rule_id": fix.rule_id,
                 "rule_name": fix.rule_name,
                 "description": fix.description,
                 "line_number": fix.line_number,
+                "line_start": fix.line_start,
+                "line_end": fix.line_end,
+                "original_code": fix.original_code,
+                "replacement_code": fix.replacement_code,
                 "is_auto_applied": True,
             }
-            for fix in hoister.auto_fixes
+            for fix in verified_fixes
         ]
 
         # Categorize every finding that was not actually transformed as a manual
@@ -276,7 +338,7 @@ class ASTCodeTransformer:
         if findings:
             auto_fixed_locations = {
                 (fix.rule_id, fix.line_number)
-                for fix in hoister.auto_fixes
+                for fix in verified_fixes
             }
             guidance_by_rule = {
                 "EKB-REC-001": "Use memoization or an iterative algorithm after confirming the function's expected inputs and memory budget.",
@@ -299,6 +361,11 @@ class ASTCodeTransformer:
                                 f.get("message", "Manual architectural rewrite required."),
                             ),
                             "line_number": line_number,
+                            "line_start": line_number,
+                            "line_end": f.get("end_line") or line_number,
+                            "original_code": "".join(code.splitlines(keepends=True)[line_number - 1:(f.get("end_line") or line_number)]).rstrip("\r\n") if isinstance(line_number, int) and line_number > 0 else None,
+                            "replacement_code": None,
+                            "unavailable_reason": "No verified automatic transformation exists for this finding. Review the recommendation and make the change manually.",
                             "is_auto_applied": False,
                         }
                     )

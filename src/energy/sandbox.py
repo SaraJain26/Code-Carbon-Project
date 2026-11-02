@@ -245,14 +245,29 @@ print(f"RESULT|{{wall_ms:.4f}}|{{cpu_ms:.4f}}|{{mem_kb:.2f}}|{{status}}|{{err_ms
 
         hardware_active = orig_res.hardware_sensor_active or opt_res.hardware_sensor_active
 
-        is_reliable = (orig_res.status == "success" and orig_res.wall_time_ms >= self.RELIABILITY_THRESHOLD_MS)
-        measurement_reliability = "reliable" if is_reliable else "low_confidence_small_workload"
+        is_reliable = (
+            orig_res.status == "success"
+            and opt_res.status == "success"
+            and orig_res.wall_time_ms >= self.RELIABILITY_THRESHOLD_MS
+        )
+        if is_reliable:
+            measurement_reliability = "reliable"
+        elif orig_res.status != "success" or opt_res.status != "success":
+            measurement_reliability = "unavailable"
+        else:
+            measurement_reliability = "low_confidence_small_workload"
 
         if is_reliable:
             reliability_note = (
                 f"Workload wall-clock execution time ({orig_res.wall_time_ms:.1f}ms) exceeds the "
                 f"{self.RELIABILITY_THRESHOLD_MS:.0f}ms empirical reliability threshold. Signal-to-Noise Ratio "
                 f"(SNR >= 10) is statistically sound."
+            )
+        elif measurement_reliability == "unavailable":
+            reliability_note = (
+                "Runtime comparison is unavailable because the original or generated code did not complete "
+                f"successfully (original: {orig_res.status}; generated: {opt_res.status}). "
+                "Use the modeled estimates instead."
             )
         else:
             reliability_note = (
