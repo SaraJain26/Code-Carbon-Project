@@ -11,6 +11,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   'Control Flow': '#f59e0b',
   'Other': '#64748b'
 };
+const CARBON_METHOD_NOTE = 'Carbon = modeled energy (relative J -> kWh) x grid intensity (gCO2eq/kWh). The energy score is a relative model, so carbon is a modeled comparison, not a measured emission.';
 
 function ChartFallback({ title, message }: { title?: string; message?: string }) {
   return (
@@ -26,11 +27,12 @@ function ChartFallback({ title, message }: { title?: string; message?: string })
 
 type RankedMetricItem = { name: string; relativePath: string; value: number };
 
-function RankedMetricBars({ items, color, formatValue, label }: {
+function RankedMetricBars({ items, color, formatValue, label, valueHelp }: {
   items: RankedMetricItem[];
   color: string;
   formatValue: (value: number) => string;
   label: string;
+  valueHelp?: string;
 }) {
   if (!items.length) return <ChartFallback title="No successful file results" />;
   const maxValue = Math.max(...items.map(item => item.value), 0);
@@ -41,7 +43,7 @@ function RankedMetricBars({ items, color, formatValue, label }: {
   return (
     <div className="ranked-metric-list" role="list" aria-label={label}>
       {items.map((item, index) => (
-        <div className="ranked-metric-row" role="listitem" key={`${item.relativePath}-${index}`} title={`${item.relativePath} · ${formatValue(item.value)}`}>
+        <div className="ranked-metric-row" role="listitem" key={`${item.relativePath}-${index}`} title={`${item.relativePath} · ${formatValue(item.value)}${valueHelp ? ` · ${valueHelp}` : ''}`}>
           <span className="ranked-metric-name">{nameCounts.get(item.name)! > 1 ? item.relativePath : item.name}</span>
           <span className="ranked-metric-track" aria-hidden="true">
             <span className="ranked-metric-fill" style={{ width: `${Math.max(2, (item.value / maxValue) * 100)}%`, background: color }} />
@@ -319,16 +321,16 @@ function CarbonScenarioComparison({ result, currentIntensity }: { result: Analyz
     <section className="panel">
       <div className="panel-head">
         <div><p className="overline">THREE-ROW CARBON COMPARISON</p><h3>Code change and execution timing</h3></div>
-        <span>Unweighted modeled footprint in gCO₂eq/run; CIRS is shown separately</span>
+      <span title={CARBON_METHOD_NOTE}>Unweighted modeled footprint in gCO₂eq/run ⓘ; CIRS is shown separately</span>
       </div>
       <div className="comparison-table-wrap">
         <table className="comparison-table">
           <thead><tr><th>Scenario</th><th>Intensity</th><th>Execution</th><th>Modeled gCO₂eq/run</th></tr></thead>
           <tbody>{rows.map(row => <tr key={row.name}>
-            <th scope="row">{row.name}</th>
-            <td>{row.intensity === undefined ? '—' : `${fixed(row.intensity, 2)} gCO₂eq/kWh`}</td>
+            <th scope="row" title={CARBON_METHOD_NOTE}>{row.name}</th>
+            <td title={CARBON_METHOD_NOTE}>{row.intensity === undefined ? '—' : `${fixed(row.intensity, 2)} gCO₂eq/kWh`}</td>
             <td>{row.when}</td>
-            <td>{fixed(row.value, 9)}</td>
+            <td title={CARBON_METHOD_NOTE}>{fixed(row.value, 9)}</td>
           </tr>)}</tbody>
         </table>
       </div>
@@ -651,7 +653,7 @@ export default function App() {
   };
   const impactRows = [
     { name: 'Energy', unit: 'modeled J (relative)', digits: 2, before: impactBeforeValues.energy, after: impactAfterValues.energy },
-    { name: 'Carbon footprint', unit: 'modeled gCO₂eq/run', digits: 6, before: impactBeforeValues.carbon, after: impactAfterValues.carbon, help: 'Carbon = modeled energy (relative J -> kWh) x grid intensity (gCO2eq/kWh). The energy score is a relative model, so carbon is a modeled comparison, not a measured emission.' },
+    { name: 'Carbon footprint', unit: 'modeled gCO₂eq/run', digits: 6, before: impactBeforeValues.carbon, after: impactAfterValues.carbon, help: CARBON_METHOD_NOTE },
     { name: 'Finding locations', unit: 'detector locations', digits: 0, before: (projectResult?.files ?? []).reduce((sum, file) => sum + (file.status === 'success' ? file.findings_count : 0), 0), after: (projectResult?.files ?? []).reduce((sum, file) => sum + Number(file.single_file_response?.post_refactor_estimation?.finding_locations_after ?? file.findings_count), 0) },
     { name: 'Mean ESS per file', unit: 'index (0–10)', digits: 2, before: projectResult?.avg_ess ?? 0, after: (projectResult?.files ?? []).filter(file => file.status === 'success').reduce((sum, file) => sum + file.after_ess, 0) / Math.max(1, projectResult?.successful_files ?? 0) },
     { name: 'Sum of per-file ESS (index)', unit: 'index (0–10) · one run per file', digits: 3, before: impactBeforeValues.ess, after: impactAfterValues.ess },
@@ -1574,7 +1576,7 @@ export default function App() {
             <p className="overline">FULL PROJECT SUSTAINABILITY ANALYSIS</p>
             <h2>{projectResult.project_name}</h2>
             <p>{projectResult.total_files} Python files ({projectResult.successful_files} analyzed, {projectResult.error_files} errors) · {projectResult.total_lines_of_code} Total SLOC · Analyzed in {projectResult.total_analysis_time_sec}s</p>
-            <p>Grid intensity: {projectResult.carbon_intensity == null ? 'Unavailable' : `${fixed(projectResult.carbon_intensity, 2)} gCO₂eq/kWh`} · Zone: {projectResult.carbon_zone || 'Unknown'} · Source: {projectResult.carbon_source_type || 'unknown'} ({projectResult.carbon_source || 'provider unavailable'})</p>
+            <p title={CARBON_METHOD_NOTE}>Grid intensity ⓘ: {projectResult.carbon_intensity == null ? 'Unavailable' : `${fixed(projectResult.carbon_intensity, 2)} gCO₂eq/kWh`} · Zone: {projectResult.carbon_zone || 'Unknown'} · Source: {projectResult.carbon_source_type || 'unknown'} ({projectResult.carbon_source || 'provider unavailable'})</p>
           </div>
           <button className="secondary-button" onClick={() => setView('workspace')}>New project analysis <ChevronRight size={17} /></button>
         </div>
@@ -1604,7 +1606,7 @@ export default function App() {
 
           <div className="estimate-note">
             <strong>How to read these numbers</strong>
-            <span>Energy is a relative model score, not metered energy. Carbon is the unweighted estimate from the model score and the selected grid intensity. Project sums assume one run per file, which may not represent how an application is deployed. Grid input: {fixed(carbonIntensityToDisplay, 2)} gCO₂eq/kWh · {carbonSourceZone} · {carbonSourceType}. Runtime timing is skipped during concurrent analysis.</span>
+            <span title={CARBON_METHOD_NOTE}>Energy is a relative model score, not metered energy. Carbon is the unweighted estimate from the model score and the selected grid intensity. Project sums assume one run per file, which may not represent how an application is deployed. Grid input ⓘ: {fixed(carbonIntensityToDisplay, 2)} gCO₂eq/kWh · {carbonSourceZone} · {carbonSourceType}. Runtime timing is skipped during concurrent analysis.</span>
           </div>
           <div className="top-files-grid">
             {topEnergyFiles[0] ? (
@@ -1624,13 +1626,13 @@ export default function App() {
             {topCarbonFiles[0] ? (
               <article className="top-file-card">
                 <span className="top-file-badge carbon">
-                  <Leaf size={12} /> Highest Carbon Footprint
+                  <Leaf size={12} /> Highest Modeled Carbon
                 </span>
                 <h4 title={topCarbonFiles[0].filename}>{topCarbonFiles[0].filename}</h4>
                 <small title={topCarbonFiles[0].relative_path}>{topCarbonFiles[0].relative_path}</small>
-                <div className="stat-val">{fixed(topCarbonFiles[0].carbonGrams, 4)}</div>
+                <div className="stat-val" title={CARBON_METHOD_NOTE}>{fixed(topCarbonFiles[0].carbonGrams, 4)}</div>
                 <div className="stat-sub">
-                  Modeled, unweighted gCO₂eq per run · risk-weighted score {fixed(topCarbonFiles[0].cirs, 6)} (unitless)
+                  Modeled, unweighted gCO₂eq per run · at a single grid intensity, its ranking matches Highest Energy · risk-weighted score {fixed(topCarbonFiles[0].cirs, 6)} (unitless)
                 </div>
               </article>
             ) : null}
@@ -1686,13 +1688,14 @@ export default function App() {
                   <p className="overline">CARBON FOOTPRINT ESTIMATE</p>
                   <h3>Unweighted modeled carbon by file</h3>
                 </div>
-                  <span>{fixed(carbonIntensityToDisplay, 1)} gCO₂eq/kWh · {carbonSourceZone} · {carbonSourceType}</span>
+                  <span title={CARBON_METHOD_NOTE}>{fixed(carbonIntensityToDisplay, 1)} gCO₂eq/kWh ⓘ · {carbonSourceZone} · {carbonSourceType}</span>
               </div>
               <RankedMetricBars
                 items={projectFilesCarbonData.map(item => ({ name: item.name, relativePath: item.relativePath, value: item.carbonGrams }))}
                 color="#c38c3d"
                 label="Top files by estimated carbon footprint"
                 formatValue={value => `${fixed(value, 5)} g`}
+                valueHelp={CARBON_METHOD_NOTE}
               />
             </section>
           </div>
@@ -2022,10 +2025,10 @@ export default function App() {
           <section className="panel carbon-panel">
             <p className="overline">CARBON / ENERGY SUMMARY</p>
             <h3>{display(carbon.zone?.display_name, currentZone?.display_name)}</h3>
-            <div className="intensity"><strong>{fixed(carbonIntensityToDisplay, 2)}</strong><span>gCO₂eq/kWh</span></div>
+            <div className="intensity" title={CARBON_METHOD_NOTE}><strong>{fixed(carbonIntensityToDisplay, 2)} ⓘ</strong><span>gCO₂eq/kWh</span></div>
             <p className="soft-copy" style={{ marginTop: '-8px' }}>{carbonSourceZone} · {carbonSourceType} · {postRefactor.carbon_metadata?.source || ''}</p>
             <p className="soft-copy">
-              Estimated unweighted carbon: {fixed(((energy.energy_joules || 0) / 3600000.0) * carbonIntensityToDisplay, 6)} modeled gCO₂eq/run from a relative energy score, not metered energy.
+              <span title={CARBON_METHOD_NOTE}>Estimated unweighted carbon ⓘ: {fixed(((energy.energy_joules || 0) / 3600000.0) * carbonIntensityToDisplay, 6)} modeled gCO₂eq/run from a relative energy score, not metered energy.</span>
             </p>
             <button className="text-button" onClick={() => setView('schedule')}>Explore better execution times <ArrowRight size={15} /></button>
           </section>
@@ -2153,7 +2156,7 @@ export default function App() {
               {forecastLoading && !impactForecast ? <p className="soft-copy" style={{ padding: '0 16px 16px' }}>Loading the project forecast…</p> : (forecastError && !impactForecast) ? <p className="soft-copy" role="status" style={{ padding: '0 16px 16px' }}>Forecast unavailable: {forecastError}. Carbon comparison currently uses the selected grid intensity without a schedule adjustment.</p> : (
                 <div className="schedule-window-card" style={{ margin: '0 16px 16px' }}>
                   <strong>{impactForecast?.has_cleaner_window === false ? 'No cleaner forecast window · use current schedule' : `${formatWindowTime(impactForecast?.window_start || impactForecast?.recommended_execution_time || undefined)}${impactForecast?.window_end ? ` to ${formatHour(impactForecast.window_end ?? undefined)}` : ''}`}</strong>
-                  <span>{impactForecast?.has_cleaner_window === false ? `Best forecast hour: ${formatWindowTime(impactForecast?.recommended_execution_time || undefined)} · ` : ''}Intensity now {fixed(impactCurrentIntensity, 2)} → applied in window {fixed(impactScheduledIntensity, 2)} gCO₂eq/kWh · {fixed(impactForecast?.scheduling_reduction_percent ?? 0, 2)}% carbon reduction{impactForecast?.has_cleaner_window === false ? ` (best forecast ${fixed(impactForecastMinimum, 2)} is not cleaner)` : ''}</span>
+                  <span title={CARBON_METHOD_NOTE}>{impactForecast?.has_cleaner_window === false ? `Best forecast hour: ${formatWindowTime(impactForecast?.recommended_execution_time || undefined)} · ` : ''}Intensity now {fixed(impactCurrentIntensity, 2)} → applied in window {fixed(impactScheduledIntensity, 2)} gCO₂eq/kWh · {fixed(impactForecast?.scheduling_reduction_percent ?? 0, 2)}% carbon reduction{impactForecast?.has_cleaner_window === false ? ` (best forecast ${fixed(impactForecastMinimum, 2)} is not cleaner)` : ''}</span>
                 </div>
               )}
             </section>
@@ -2398,13 +2401,14 @@ export default function App() {
               label="Current Grid Intensity"
               metric={fixed(analysisMode === 'project' && projectResult ? impactCurrentIntensity : (currentZone?.carbon_intensity ?? forecast?.current_carbon_intensity ?? carbonIntensityToDisplay), 2)}
               unit={`gCO₂eq/kWh · ${carbonSourceZone} · ${carbonSourceType}`}
+              help={CARBON_METHOD_NOTE}
               tone="amber"
             />
             <Metric
               label="Current Workload Carbon Footprint"
               metric={analysisMode === 'project' && projectResult ? fixed((projectAfterEnergy / 3600000.0) * impactCurrentIntensity, 6) : fixed(((energy.energy_joules || 0) / 3600000.0) * (currentZone?.carbon_intensity ?? forecast?.current_carbon_intensity ?? carbonIntensityToDisplay), 6)}
               unit="modeled gCO₂eq/run · unweighted · not metered"
-              help="Estimated from relative model energy, not measured energy."
+              help={CARBON_METHOD_NOTE}
               tone="ink"
             />
           </div>
@@ -2533,15 +2537,15 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginTop: '16px' }}>
           <div style={{ background: 'var(--bg)', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--line)' }}>
-            <p style={{ fontSize: '11px', color: 'var(--muted)', margin: 0 }}>Best forecast hour intensity</p>
-            <strong style={{ fontSize: '20px', color: 'var(--forest)', display: 'block', margin: '4px 0 0' }}>
+            <p style={{ fontSize: '11px', color: 'var(--muted)', margin: 0 }} title={CARBON_METHOD_NOTE}>Best forecast hour intensity ⓘ</p>
+            <strong title={CARBON_METHOD_NOTE} style={{ fontSize: '20px', color: 'var(--forest)', display: 'block', margin: '4px 0 0' }}>
               {fixed(forecastMinimum, 1)} <small style={{ fontSize: '11px', color: 'var(--muted)' }}>gCO₂eq/kWh</small>
             </strong>
           </div>
 
           <div style={{ background: 'var(--bg)', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--line)' }}>
-            <p style={{ fontSize: '11px', color: 'var(--muted)', margin: 0 }}>Current Grid Intensity</p>
-            <strong style={{ fontSize: '20px', color: 'var(--ink)', display: 'block', margin: '4px 0 0' }}>
+            <p style={{ fontSize: '11px', color: 'var(--muted)', margin: 0 }} title={CARBON_METHOD_NOTE}>Current Grid Intensity ⓘ</p>
+            <strong title={CARBON_METHOD_NOTE} style={{ fontSize: '20px', color: 'var(--ink)', display: 'block', margin: '4px 0 0' }}>
               {fixed(intensityNow, 1)} <small style={{ fontSize: '11px', color: 'var(--muted)' }}>gCO₂eq/kWh</small>
             </strong>
           </div>
@@ -2555,7 +2559,7 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
         </div>
 
         <p style={{ fontSize: '12px', color: 'var(--muted)', margin: '14px 0 0' }}>
-          {hasCleanerWindow ? `Best forecast window: ${formatWindowTime(forecast.window_start || forecast.recommended_execution_time || undefined)} · ${fixed(intensityWindow, 1)} gCO₂eq/kWh. ` : `No forecast window is cleaner than the current grid; modeled carbon reduction is 0% and the current intensity is retained. The best forecast hour is ${formatWindowTime(forecast.recommended_execution_time || undefined)} at ${fixed(forecastMinimum, 1)} gCO₂eq/kWh. `}Source: {forecast.source} · {forecast.source_type} · {zoneName} ({zoneKey}).
+          <span title={CARBON_METHOD_NOTE}>{hasCleanerWindow ? `Best forecast window: ${formatWindowTime(forecast.window_start || forecast.recommended_execution_time || undefined)} · ${fixed(intensityWindow, 1)} gCO₂eq/kWh. ` : `No forecast window is cleaner than the current grid; modeled carbon reduction is 0% and the current intensity is retained. The best forecast hour is ${formatWindowTime(forecast.recommended_execution_time || undefined)} at ${fixed(forecastMinimum, 1)} gCO₂eq/kWh. `}Source: {forecast.source} · {forecast.source_type} · {zoneName} ({zoneKey}).</span>
         </p>
       </section>
 
@@ -2580,7 +2584,7 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
               <Tooltip
                 cursor={{ fill: '#f3f1eb' }}
                 formatter={(val: any, _name: any, item: any) => [
-                  `${val} gCO₂eq/kWh (${fixed(item?.payload?.emissions, 6)} modeled gCO₂eq/run workload footprint)${item?.payload?.isCurrent ? ' · Current hour' : ''}${item?.payload?.isOptimal ? ' · Recommended hour' : ''}`,
+                  `${val} gCO₂eq/kWh (${fixed(item?.payload?.emissions, 6)} modeled gCO₂eq/run workload footprint)${item?.payload?.isCurrent ? ' · Current hour' : ''}${item?.payload?.isOptimal ? ' · Recommended hour' : ''}. ${CARBON_METHOD_NOTE}`,
                   'Grid Carbon Intensity'
                 ]}
                 labelFormatter={(label: any, items: readonly any[]) => {
