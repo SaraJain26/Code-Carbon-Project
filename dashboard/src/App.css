@@ -291,6 +291,7 @@ body { font-family:'Manrope', Arial, sans-serif; letter-spacing:-.12px; }
   height: 10px;
   border-radius: 50%;
 }
+.recharts-legend-item-text { color: var(--muted) !important; font-family: inherit !important; font-size: 11px !important; font-weight: 500 !important; }
 .legend-custom-line { display: inline-block; width: 15px; border-top: 2px dashed; }
 .forecast-chart-help { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .suggested-code-section { margin: 18px 0; }

@@ -27,6 +27,20 @@ function ChartFallback({ title, message }: { title?: string; message?: string })
 
 type RankedMetricItem = { name: string; relativePath: string; value: number };
 
+function middleEllipsisPath(path: string, limit = 34): string {
+  if (path.length <= limit) return path;
+  const parts = path.replace(/\\/g, '/').split('/');
+  const filename = parts.at(-1) || path;
+  const parent = parts.length > 1 ? parts.at(-2) : '';
+  const suffix = `${parent ? `${parent}/` : ''}${filename}`;
+  const prefixBudget = Math.max(0, limit - suffix.length - 2);
+  if (prefixBudget >= 3) return `${path.slice(0, prefixBudget)}…/${suffix}`;
+  const available = Math.max(6, limit - (parent ? parent.length + 1 : 0) - 1);
+  const start = Math.ceil(available / 2);
+  const end = Math.floor(available / 2);
+  return `${parent ? `${parent}/` : ''}${filename.slice(0, start)}…${filename.slice(-end)}`;
+}
+
 function RankedMetricBars({ items, color, formatValue, label, valueHelp }: {
   items: RankedMetricItem[];
   color: string;
@@ -37,14 +51,11 @@ function RankedMetricBars({ items, color, formatValue, label, valueHelp }: {
   if (!items.length) return <ChartFallback title="No successful file results" />;
   const maxValue = Math.max(...items.map(item => item.value), 0);
   if (maxValue <= 0) return <ChartFallback title="No non-zero values to compare" />;
-  const nameCounts = new Map<string, number>();
-  items.forEach(item => nameCounts.set(item.name, (nameCounts.get(item.name) || 0) + 1));
-
   return (
     <div className="ranked-metric-list" role="list" aria-label={label}>
       {items.map((item, index) => (
         <div className="ranked-metric-row" role="listitem" key={`${item.relativePath}-${index}`} title={`${item.relativePath} · ${formatValue(item.value)}${valueHelp ? ` · ${valueHelp}` : ''}`}>
-          <span className="ranked-metric-name">{nameCounts.get(item.name)! > 1 ? item.relativePath : item.name}</span>
+          <span className="ranked-metric-name">{middleEllipsisPath(item.relativePath)}</span>
           <span className="ranked-metric-track" aria-hidden="true">
             <span className="ranked-metric-fill" style={{ width: `${Math.max(2, (item.value / maxValue) * 100)}%`, background: color }} />
           </span>
@@ -193,10 +204,12 @@ function CodeChangesSection({ filename, sourceCode, optimizedCode, findings, aut
   );
 }
 
-function ProjectCodeChangesSection({ projectResult, projectFiles, projectZipFile }: {
+function ProjectCodeChangesSection({ projectResult, projectFiles, projectZipFile, excludeTestCode, setExcludeTestCode }: {
   projectResult: ProjectAnalyzeResponse;
   projectFiles: ScannedFile[];
   projectZipFile: File | null;
+  excludeTestCode: boolean;
+  setExcludeTestCode: (exclude: boolean) => void;
 }) {
   const [localSources, setLocalSources] = useState<Map<string, string>>(() => new Map());
   const sourceScope = projectResult.timestamp || projectResult.project_name;
@@ -204,7 +217,6 @@ function ProjectCodeChangesSection({ projectResult, projectFiles, projectZipFile
   const filesWithFindings = projectResult.files.filter(file =>
     file.status === 'success' && file.single_file_response?.pipeline_raw?.energy_smell_report?.findings?.length
   );
-  const [excludeTestCode, setExcludeTestCode] = useState(true);
   const shownGenericPatterns = new Set<string>();
   const visibleFilesWithFindings = filesWithFindings.filter(file => !excludeTestCode || !isTestOrExamplePath(file.relative_path));
   const visibleFindingCount = visibleFilesWithFindings.reduce((sum, file) => sum + (file.single_file_response?.pipeline_raw?.energy_smell_report?.findings?.length || 0), 0);
@@ -509,6 +521,7 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [projectResponseOutdated, setProjectResponseOutdated] = useState(false);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('codecarbon-theme') === 'dark');
+  const [excludeTestCode, setExcludeTestCode] = useState(true);
 
   const [projectZipFile, setProjectZipFile] = useState<File | null>(null);
   const [projectFiles, setProjectFiles] = useState<ScannedFile[]>([]);
@@ -602,6 +615,8 @@ export default function App() {
   const recommendations = Array.isArray(result?.recommendations) ? result.recommendations : (result?.recommendations?.recommendations || []);
   const resultFindings = result?.pipeline_raw?.energy_smell_report?.findings || result?.findings || [];
   const postRefactor = result?.post_refactor_estimation || {};
+  const projectVisibleFindingCount = (projectResult?.files ?? []).reduce((sum, file) => sum + (file.status === 'success' && (!excludeTestCode || !isTestOrExamplePath(file.relative_path)) ? file.findings_count : 0), 0);
+  const projectVisibleRuleCount = (projectResult?.files ?? []).reduce((sum, file) => sum + (file.status === 'success' && (!excludeTestCode || !isTestOrExamplePath(file.relative_path)) ? file.rule_count : 0), 0);
 
   // Individual Findings count from backend summary / findings for single file
   const totalFindingsCount =
@@ -654,7 +669,7 @@ export default function App() {
   const impactRows = [
     { name: 'Energy', unit: 'modeled J (relative)', digits: 2, before: impactBeforeValues.energy, after: impactAfterValues.energy },
     { name: 'Carbon footprint', unit: 'modeled gCO₂eq/run', digits: 6, before: impactBeforeValues.carbon, after: impactAfterValues.carbon, help: CARBON_METHOD_NOTE },
-    { name: 'Finding locations', unit: 'detector locations', digits: 0, before: (projectResult?.files ?? []).reduce((sum, file) => sum + (file.status === 'success' ? file.findings_count : 0), 0), after: (projectResult?.files ?? []).reduce((sum, file) => sum + Number(file.single_file_response?.post_refactor_estimation?.finding_locations_after ?? file.findings_count), 0) },
+    { name: 'Finding locations', unit: 'detector locations', digits: 0, before: (projectResult?.files ?? []).reduce((sum, file) => sum + (file.status === 'success' && (!excludeTestCode || !isTestOrExamplePath(file.relative_path)) ? file.findings_count : 0), 0), after: (projectResult?.files ?? []).reduce((sum, file) => sum + (file.status === 'success' && (!excludeTestCode || !isTestOrExamplePath(file.relative_path)) ? Number(file.single_file_response?.post_refactor_estimation?.finding_locations_after ?? file.findings_count) : 0), 0) },
     { name: 'Mean ESS per file', unit: 'index (0–10)', digits: 2, before: projectResult?.avg_ess ?? 0, after: (projectResult?.files ?? []).filter(file => file.status === 'success').reduce((sum, file) => sum + file.after_ess, 0) / Math.max(1, projectResult?.successful_files ?? 0) },
     { name: 'Sum of per-file ESS (index)', unit: 'index (0–10) · one run per file', digits: 3, before: impactBeforeValues.ess, after: impactAfterValues.ess },
     { name: 'CIRS', unit: 'summed risk-weighted score', digits: 6, before: impactBeforeValues.cirs, after: impactAfterValues.cirs },
@@ -689,6 +704,7 @@ export default function App() {
     }>();
 
     for (const fileItem of projectResult.files) {
+      if (excludeTestCode && isTestOrExamplePath(fileItem.relative_path)) continue;
       const fileResp = fileItem.single_file_response;
       if (!fileResp) continue;
       const recs = Array.isArray(fileResp.recommendations)
@@ -728,7 +744,7 @@ export default function App() {
     }
 
     return Array.from(map.values()).sort((a, b) => b.priority_score - a.priority_score);
-  }, [projectResult]);
+  }, [projectResult, excludeTestCode]);
   const projectRecommendationBadge = projectResult
     ? `${projectAggregatedRecommendations.length} suggestions · ${projectResult?.auto_fixable_count ?? 0} auto-fixable · ${projectResult?.auto_applied_count ?? 0} applied`
     : `${recommendations.length} recommendations`;
@@ -745,21 +761,23 @@ export default function App() {
     };
 
     for (const fileItem of projectResult.files) {
+      if (excludeTestCode && isTestOrExamplePath(fileItem.relative_path)) continue;
       const fileResp = fileItem.single_file_response;
       if (!fileResp) continue;
       const findings = fileResp.pipeline_raw?.energy_smell_report?.findings || [];
       for (const f of findings) {
         const cat = String(f.category || f.rule_id || '').toLowerCase();
-        if (cat.includes('io') || cat.includes('file')) categories['File & I/O'] += 1;
-        else if (cat.includes('network') || cat.includes('http') || cat.includes('api')) categories['Network'] += 1;
-        else if (cat.includes('memory') || cat.includes('allocation')) categories['Memory'] += 1;
-        else if (cat.includes('nest') || cat.includes('loop') || cat.includes('compute') || cat.includes('math')) categories['Computation'] += 1;
+        const ruleId = String(f.rule_id || '').toLowerCase();
+        if (ruleId.includes('io-') || ['io', 'file & i/o', 'file and i/o'].includes(cat)) categories['File & I/O'] += 1;
+        else if (ruleId.includes('net-') || cat.includes('network') || cat.includes('http') || cat.includes('api')) categories['Network'] += 1;
+        else if (ruleId.includes('mem-') || cat.includes('memory') || cat.includes('allocation')) categories['Memory'] += 1;
+        else if (cat.includes('nest') || cat.includes('loop') || cat.includes('comput') || cat.includes('math') || ruleId.includes('comp-')) categories['Computation'] += 1;
         else categories['Control Flow'] += 1;
       }
     }
 
     return Object.entries(categories).map(([name, count]) => ({ name, count }));
-  }, [projectResult]);
+  }, [projectResult, excludeTestCode]);
 
   // Top ranked file highlights
   const topEnergyFiles = useMemo(() => {
@@ -769,8 +787,8 @@ export default function App() {
 
   const topFindingsFiles = useMemo(() => {
     if (!projectResult?.files) return [];
-    return [...projectResult.files].sort((a, b) => b.findings_count - a.findings_count).slice(0, 3);
-  }, [projectResult]);
+    return [...projectResult.files].filter(file => !excludeTestCode || !isTestOrExamplePath(file.relative_path)).sort((a, b) => b.findings_count - a.findings_count).slice(0, 3);
+  }, [projectResult, excludeTestCode]);
 
   const topCarbonFiles = useMemo(() => {
     if (!projectResult?.files) return [];
@@ -838,11 +856,11 @@ export default function App() {
   const projectEssDistribution = useMemo(() => {
     if (!projectResult?.files) return [];
     const bins = [
-      { label: '0–<2', min: 0, max: 2, count: 0 },
-      { label: '2–<4', min: 2, max: 4, count: 0 },
-      { label: '4–<6', min: 4, max: 6, count: 0 },
-      { label: '6–<8', min: 6, max: 8, count: 0 },
-      { label: '8–10', min: 8, max: 10.000001, count: 0 },
+      { label: '0-2', min: 0, max: 2, count: 0 },
+      { label: '2-4', min: 2, max: 4, count: 0 },
+      { label: '4-6', min: 4, max: 6, count: 0 },
+      { label: '6-8', min: 6, max: 8, count: 0 },
+      { label: '8-10', min: 8, max: 10.000001, count: 0 },
     ];
     for (const file of projectResult.files) {
       if (file.status !== 'success') continue;
@@ -1581,10 +1599,12 @@ export default function App() {
           <button className="secondary-button" onClick={() => setView('workspace')}>New project analysis <ChevronRight size={17} /></button>
         </div>
 
+        <label className="test-code-toggle"><input type="checkbox" checked={excludeTestCode} onChange={event => setExcludeTestCode(event.target.checked)} /> Exclude test/example findings from totals <strong>{excludeTestCode ? 'On' : 'Off'}</strong> · {projectResult.files.filter(file => isTestOrExamplePath(file.relative_path)).length} test/example files</label>
+
         <div className="metric-grid">
-          <Metric label="Total Files" metric={String(projectResult.total_files)} unit="COUNT" tone="blue" />
+          <Metric label="Total Files" metric={String(projectResult.total_files)} unit="" tone="blue" />
           <Metric label="Total Project SLOC" metric={fixed(projectResult.total_lines_of_code, 0)} unit="sum across analyzed files" tone="blue" />
-          <Metric label="Finding locations" metric={fixed(projectResult.total_findings, 0)} unit={`${fixed(projectResult.total_rule_count, 0)} per-file rule instances · summed across files`} tone="blue" />
+          <Metric label="Finding locations" metric={fixed(projectVisibleFindingCount, 0)} unit={`${fixed(projectVisibleRuleCount, 0)} per-file rule instances · filtered by test-code toggle`} tone="blue" />
           <Metric label="Mean SCI per file" metric={fixed(projectResult.avg_sci, 4)} unit="mean · index (0–1)" tone="green" />
           <Metric label="Mean ESS per file" metric={fixed(projectResult.avg_ess, 2)} unit="mean · score out of 10" tone="amber" />
           <Metric label="Project energy score" metric={fixed(projectResult.total_energy_joules, 2)} unit="modeled J (relative) · sum across files (one run each)" tone="green" help="Derived from relative model estimates, not metered energy. The aggregate assumes each file runs once." />
@@ -1644,7 +1664,7 @@ export default function App() {
                 </span>
                 <h4 title={topFindingsFiles[0].filename}>{topFindingsFiles[0].filename}</h4>
                 <small title={topFindingsFiles[0].relative_path}>{topFindingsFiles[0].relative_path}</small>
-                <div className="stat-val">{fixed(topFindingsFiles[0].rule_count, 0)} rules</div>
+                <div className="stat-val">{fixed(topFindingsFiles[0].rule_count, 0)} {topFindingsFiles[0].rule_count === 1 ? 'rule' : 'rules'}</div>
                 <div className="stat-sub">
                   {fixed(topFindingsFiles[0].findings_count, 0)} finding locations · ESS {fixed(topFindingsFiles[0].ess, 2)} / 10 ({fixed(topFindingsFiles[0].lines_of_code, 0)} SLOC)
                 </div>
@@ -1772,7 +1792,7 @@ export default function App() {
               <h3>Findings by Category</h3>
             </div>
             <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
-              {fixed(projectResult.total_rule_count, 0)} per-file rule instances · {fixed(projectResult.total_findings, 0)} finding locations
+              {fixed(projectVisibleRuleCount, 0)} per-file rule instances · {fixed(projectVisibleFindingCount, 0)} finding locations · test/example code {excludeTestCode ? 'excluded' : 'included'}
             </span>
           </div>
 
@@ -1795,7 +1815,8 @@ export default function App() {
                         cy="50%"
                         innerRadius={55}
                         outerRadius={85}
-                        paddingAngle={4}
+                        paddingAngle={0}
+                        minAngle={2}
                         dataKey="count"
                         nameKey="name"
                       >
@@ -1803,7 +1824,7 @@ export default function App() {
                           <Cell key={`cat-${index}`} fill={CATEGORY_COLORS[entry.name] || '#2e6956'} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(val: any, name: any) => [`${val} smell(s)`, name]} />
+                      <Tooltip formatter={(val: any, name: any) => { const total = projectCategoryDistributionData.reduce((sum, entry) => sum + entry.count, 0); const count = Number(val || 0); return [`${count} finding${count === 1 ? '' : 's'} · ${total ? (count / total * 100).toFixed(1) : '0.0'}%`, name]; }} />
                       <Legend verticalAlign="bottom" height={36} iconType="circle" />
                     </PieChart>
                   </ResponsiveContainer>
@@ -1823,10 +1844,10 @@ export default function App() {
               {projectEssDistribution.length ? (
                 <div className="chart" style={{ marginTop: '14px' }}>
                   <ResponsiveContainer width="100%" height={240}>
-                    <BarChart data={projectEssDistribution} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+                    <BarChart data={projectEssDistribution} margin={{ top: 8, right: 12, left: 12, bottom: 18 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e4e2dc" />
-                      <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                      <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                      <XAxis dataKey="label" tick={{ fontSize: 11 }} label={{ value: 'ESS score range', position: 'insideBottom', offset: -7 }} />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 11 }} label={{ value: 'Number of files', angle: -90, position: 'insideLeft' }} />
                       <Tooltip formatter={(value: any) => [`${value} file(s)`, 'Count']} />
                       <Bar dataKey="count" name="Files" fill="#f59e0b" radius={[4, 4, 0, 0]} />
                     </BarChart>
@@ -1856,6 +1877,7 @@ export default function App() {
             </div>
           </div>
 
+          <p className="soft-copy" style={{ margin: '0 16px 10px' }}>Static analysis only; code is not executed.</p>
           <div className="project-table-wrap">
             <table className="project-table">
               <thead>
@@ -1867,7 +1889,6 @@ export default function App() {
                     SLOC {sortColumn === 'lines_of_code' ? (sortAsc ? '▲' : '▼') : ''}
                   </th>
                   <th>Status</th>
-                  <th>Sandbox execution</th>
                   <th onClick={() => { if (sortColumn === 'findings_count') setSortAsc(!sortAsc); else { setSortColumn('findings_count'); setSortAsc(false); } }} style={{ cursor: 'pointer' }}>
                     Rules · locations {sortColumn === 'findings_count' ? (sortAsc ? '▲' : '▼') : ''}
                   </th>
@@ -1888,7 +1909,7 @@ export default function App() {
               </thead>
               <tbody>
                 {sortedProjectFiles.length === 0 && (
-                  <tr><td colSpan={10} className="empty-table-message">No files match the current search and status filter.</td></tr>
+                  <tr><td colSpan={9} className="empty-table-message">No files match the current search and status filter.</td></tr>
                 )}
                 {sortedProjectFiles.map((fileItem: any) => (
                   <tr key={fileItem.relative_path} className={fileItem.status === 'error' ? 'row-error' : ''}>
@@ -1896,7 +1917,7 @@ export default function App() {
                       <div className="file-name-cell">
                         <FileCode2 size={16} />
                         <div>
-                          <strong>{fileItem.filename}</strong>
+                          <strong>{fileItem.filename}{isTestOrExamplePath(fileItem.relative_path) ? ' · Test code' : ''}</strong>
                           <small>{fileItem.relative_path}</small>
                         </div>
                       </div>
@@ -1906,8 +1927,7 @@ export default function App() {
                       <span className={`status-badge ${fileItem.status}`}>{fileItem.status === 'error' ? 'Failed' : 'Successful'}</span>
                       {fileItem.status === 'error' && <small className="file-error-reason">{fileItem.error_message || 'Analysis could not be completed.'}</small>}
                     </td>
-                    <td>{fileItem.execution_status === 'not_executed' ? 'Not executed (static analysis)' : fileItem.execution_status}</td>
-                    <td>{fileItem.status === 'success' ? <span className={`findings-badge ${fileItem.findings_count > 0 ? 'has-findings' : ''}`}>{fixed(fileItem.rule_count, 0)} rules · {fixed(fileItem.findings_count, 0)} locations</span> : '—'}</td>
+                    <td>{fileItem.status === 'success' ? <span className={`findings-badge ${fileItem.findings_count > 0 ? 'has-findings' : ''}`}>{fixed(fileItem.rule_count, 0)} {fileItem.rule_count === 1 ? 'rule' : 'rules'} · {fixed(fileItem.findings_count, 0)} locations</span> : '—'}</td>
                     <td>{fileItem.status === 'success' ? fixed(fileItem.sci, 4) : '—'}</td>
                     <td>{fileItem.status === 'success' ? fixed(fileItem.ess, 2) : '—'}</td>
                     <td>{fileItem.status === 'success' ? fixed(fileItem.cirs, 6) : '—'}</td>
@@ -2077,7 +2097,7 @@ export default function App() {
               <span className="count-pill">{projectAggregatedRecommendations.length} unique rules aggregated</span>
             </div>
 
-            <ProjectCodeChangesSection projectResult={projectResult} projectFiles={projectFiles} projectZipFile={projectZipFile} />
+            <ProjectCodeChangesSection projectResult={projectResult} projectFiles={projectFiles} projectZipFile={projectZipFile} excludeTestCode={excludeTestCode} setExcludeTestCode={setExcludeTestCode} />
 
           </section>
         ) : result ? (
@@ -2422,7 +2442,7 @@ export default function App() {
 }
 
 function Metric({ label, metric, unit, tone, help }: { label: string; metric: string; unit: string; tone: string; help?: string }) {
-  return <article className={`metric ${tone}`}><p>{label}{help && <abbr className="metric-help" title={help} aria-label={help}>ⓘ</abbr>}</p><strong>{metric}</strong><span>{unit}</span></article>;
+  return <article className={`metric ${tone}`}><p>{label}{help && <abbr className="metric-help" title={help} aria-label={help}>ⓘ</abbr>}</p><strong>{metric}</strong>{unit && <span>{unit}</span>}</article>;
 }
 function formatWindowTime(isoStr?: string): string {
   if (!isoStr) return '—';
