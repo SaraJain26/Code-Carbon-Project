@@ -27,15 +27,19 @@ class NetworkCallDetector:
                 operation.operation.lower().startswith("client.")
                 and client_method in {"get", "post"}
             )
+            ambiguous_receiver = operation.operation.split(".", 1)[0].lower() in {"client", "session"}
+            confidence = 0.50 if possible_flask_test_client or ambiguous_receiver else 0.90
 
             candidates.append(
                 Candidate.create(
                     rule_id=self.RULE_ID,
-                    confidence=RuleConfidence(0.50 if possible_flask_test_client else 0.90),
+                    confidence=RuleConfidence(confidence),
                     message=(
                         "Network operation detected; may be a false positive because client.get/post "
                         "can be a Flask test-client call."
                         if possible_flask_test_client
+                        else "Network operation detected; verify the receiver type because a generic session/client method may be local application state."
+                        if ambiguous_receiver
                         else "Network operation detected."
                     ),
                     evidence=[

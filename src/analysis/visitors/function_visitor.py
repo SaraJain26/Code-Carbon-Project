@@ -70,4 +70,18 @@ class FunctionVisitor(ContextualVisitor):
         return params
 
     def _has_direct_recursion(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-        return any(isinstance(child, ast.Call) and call_name(child.func).split(".")[-1] == node.name for child in ast.walk(node))
+        for child in ast.walk(node):
+            if not isinstance(child, ast.Call):
+                continue
+            if isinstance(child.func, ast.Name) and child.func.id == node.name:
+                return True
+            # Recognize an explicit self/cls recursive call while excluding
+            # super().method() and unrelated objects' same-named methods.
+            if (
+                isinstance(child.func, ast.Attribute)
+                and child.func.attr == node.name
+                and isinstance(child.func.value, ast.Name)
+                and child.func.value.id in {"self", "cls"}
+            ):
+                return True
+        return False

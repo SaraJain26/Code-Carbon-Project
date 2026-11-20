@@ -81,4 +81,8 @@ class CallGraph:
                 yield caller, callee
 
     def _is_direct_recursion(self, caller: str, callee: str) -> bool:
-        return caller.split(".")[-1] == callee.split(".")[-1]
+        # Matching only the final component labels unrelated methods with the
+        # same name (for example, every __init__ that calls super().__init__)
+        # as recursive. A direct call-graph edge is recursive only when the
+        # fully qualified caller and callee are the same symbol.
+        return caller == callee

@@ -30,6 +30,22 @@ class StaticAnalysisEngineTest(unittest.TestCase):
         self.assertIn("fibonacci", result.call_graph.recursive_functions())
         self.assertIn(("is_even", "is_odd"), result.call_graph.mutual_recursions())
 
+    def test_super_initializer_is_not_misclassified_as_recursion(self) -> None:
+        result = StaticAnalysisEngine().analyze_source(
+            "class Base:\n"
+            "    def __init__(self):\n"
+            "        pass\n"
+            "class Child(Base):\n"
+            "    def __init__(self):\n"
+            "        super().__init__()\n"
+            "def factorial(n):\n"
+            "    return 1 if n < 2 else n * factorial(n - 1)\n"
+        )
+
+        functions = {function.qualified_name: function for function in result.functions}
+        self.assertFalse(functions["Child.__init__"].is_recursive)
+        self.assertTrue(functions["factorial"].is_recursive)
+
     def test_async_network_and_call_classification(self) -> None:
         result = StaticAnalysisEngine().analyze_file(FIXTURES / "async_network.py")
 
