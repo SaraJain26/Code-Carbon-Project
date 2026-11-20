@@ -233,6 +233,20 @@ def collect_sizes(values):
     res = ASTCodeTransformer().transform(code)
 
     assert res.optimized_code == code
+
+
+def test_transformer_does_not_hoist_raising_call_out_of_empty_loop():
+    code = """\
+def safe_when_empty():
+    for _ in []:
+        value = max([])
+    return 'ok'
+"""
+    res = ASTCodeTransformer().transform(code)
+    assert res.optimized_code == code
+    namespace = {}
+    exec(compile(res.optimized_code, "empty_loop.py", "exec"), namespace)
+    assert namespace["safe_when_empty"]() == "ok"
     assert res.auto_applied_fixes == []
 
 

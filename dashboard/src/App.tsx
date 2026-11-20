@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, AlertCircle, ArrowLeft, ArrowRight, ChevronDown, ChevronRight, Clock3, Code2, Copy, Download, FileCode2, FileText, Flame, Folder, FolderArchive, Gauge, Globe2, Leaf, LoaderCircle, Moon, Play, Search, Sparkles, Sun, Upload, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import type { AnalyzeResponse, ForecastResponse, ProjectAnalyzeResponse, ProjectFileResult } from './api-types';
 
 const CATEGORY_COLORS: Record<string, string> = {
   'Computation': '#2e6956',
@@ -261,7 +262,7 @@ function MetricComparison({ rows }: { rows: ComparisonRow[] }) {
             const unchanged = Math.abs(row.after - row.before) < Math.pow(10, -(row.decimals ?? 3)) / 2;
             const changeClass = unchanged ? 'unchanged' : delta !== null && delta < 0 ? 'change-good' : 'change-worse';
             const changeText = unchanged
-              ? 'No change'
+              ? 'No modeled change'
               : delta === null
               ? (row.after === 0 ? 'No change' : 'Increased from zero')
               : `${Math.abs(delta).toFixed(1)}% ${delta < 0 ? 'lower' : 'higher'}`;
@@ -279,6 +280,44 @@ function MetricComparison({ rows }: { rows: ComparisonRow[] }) {
     </div>
   );
 }
+
+function CarbonScenarioComparison({ result, currentIntensity }: { result: AnalyzeResponse; currentIntensity?: number }) {
+  if (result.carbon_before === undefined || result.carbon_after_now === undefined || result.carbon_after_green === undefined) return null;
+  const windowLabel = result.window_start && result.window_end
+    ? `${new Date(result.window_start).toLocaleString()} – ${new Date(result.window_end).toLocaleTimeString()}`
+    : 'Forecast window unavailable';
+  const rows = [
+    { name: 'Before · run now', value: result.carbon_before, intensity: currentIntensity, when: 'Current grid' },
+    { name: 'After · run now', value: result.carbon_after_now, intensity: currentIntensity, when: 'Current grid' },
+    { name: 'After · green window', value: result.carbon_after_green, intensity: result.green_window_intensity, when: windowLabel },
+  ];
+  return (
+    <section className="panel">
+      <div className="panel-head">
+        <div><p className="overline">THREE-ROW CARBON COMPARISON</p><h3>Code change and execution timing</h3></div>
+        <span>Unweighted modeled footprint in gCO₂eq/run; CIRS is shown separately</span>
+      </div>
+      <div className="comparison-table-wrap">
+        <table className="comparison-table">
+          <thead><tr><th>Scenario</th><th>Intensity</th><th>Execution</th><th>Modeled gCO₂eq/run</th></tr></thead>
+          <tbody>{rows.map(row => <tr key={row.name}>
+            <th scope="row">{row.name}</th>
+            <td>{row.intensity === undefined ? '—' : `${fixed(row.intensity, 2)} gCO₂eq/kWh`}</td>
+            <td>{row.when}</td>
+            <td>{fixed(row.value, 9)}</td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+      <p className="soft-copy" style={{ marginBottom: 0 }}>
+        Code only: {fixed(result.code_only_pct, 2)}% · Schedule only: {fixed(result.schedule_only_pct, 2)}% · Total: {fixed(result.total_pct, 2)}%
+      </p>
+      {result.cirs_before !== undefined && result.cirs_after !== undefined && (
+        <p className="soft-copy">Separate unitless CIRS risk score: {fixed(result.cirs_before, 9)} before → {fixed(result.cirs_after, 9)} after.</p>
+      )}
+      {result.auto_applied_fixes?.length === 0 && <p className="soft-copy">No modeled change: no automatic code fix was applied.</p>}
+    </section>
+  );
+}
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
 import JSZip from 'jszip';
@@ -286,6 +325,68 @@ import './App.css';
 
 const rawApiUrl = (import.meta.env.VITE_API_URL || '/api').trim().replace(/\/+$/, '');
 const API = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl}/api`;
+
+class TabErrorBoundary extends Component<{
+  tabName: string;
+  children: ReactNode;
+}, { error: Error | null }> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error(`[Code-Carbon] ${this.props.tabName} tab render failed:`, error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.error) {
+      return <section className="panel tab-error" role="alert">
+        <h2>{this.props.tabName} could not be rendered</h2>
+        <p>{this.state.error.name}: {this.state.error.message}</p>
+      </section>;
+    }
+    return this.props.children;
+  }
+}
+
+function normalizeProjectResponse(payload: Partial<ProjectAnalyzeResponse>): ProjectAnalyzeResponse {
+  const before = payload.project_before ?? {
+    energy: Number(payload.total_energy_joules ?? 0),
+    cirs: Number(payload.total_cirs ?? 0),
+    ess: Number(payload.avg_ess ?? 0) * Number(payload.successful_files ?? 0),
+  };
+  const after = payload.project_after ?? before;
+  const delta = payload.project_delta ?? {
+    energy: after.energy - before.energy,
+    cirs: after.cirs - before.cirs,
+    ess: after.ess - before.ess,
+  };
+  const deltaPercent = payload.project_delta_percent ?? {
+    energy: before.energy ? delta.energy / before.energy * 100 : 0,
+    cirs: before.cirs ? delta.cirs / before.cirs * 100 : 0,
+    ess: before.ess ? delta.ess / before.ess * 100 : 0,
+  };
+  return {
+    ...payload,
+    project_before: before,
+    project_after: after,
+    project_delta: delta,
+    project_delta_percent: deltaPercent,
+    scheduling: payload.scheduling ?? { status: 'unavailable', error: 'The response did not include a scheduling forecast.' },
+    auto_fixable_count: Number(payload.auto_fixable_count ?? 0),
+    auto_applied_count: Number(payload.auto_applied_count ?? 0),
+    files: Array.isArray(payload.files) ? payload.files : [],
+  } as ProjectAnalyzeResponse;
+}
+
+function isCurrentProjectResponse(payload: Partial<ProjectAnalyzeResponse>): boolean {
+  return Boolean(payload.project_before && payload.project_after && payload.project_delta
+    && payload.project_delta_percent && Number.isFinite(payload.auto_fixable_count)
+    && Number.isFinite(payload.auto_applied_count) && Array.isArray(payload.files)
+    && payload.scheduling !== undefined);
+}
 
 async function readApiJson<T>(response: Response, requestUrl: string): Promise<T> {
   const contentType = response.headers.get('content-type') || '(none)';
@@ -343,7 +444,9 @@ const samples = [
   { label: 'Clean example', file: 'sample_clean.py', code: `def transform(items):\n    multiplier = 4200\n    return [item * multiplier for item in items]` }
 ];
 const display = (x: unknown, fallback = '—') => x === null || x === undefined || x === '' ? fallback : String(x);
-const fixed = (x: unknown, places = 2) => typeof x === 'number' && Number.isFinite(x) ? x.toFixed(places) : '—';
+const fixed = (x: unknown, places = 2) => typeof x === 'number' && Number.isFinite(x)
+  ? x.toLocaleString('en-US', { minimumFractionDigits: places, maximumFractionDigits: places })
+  : '—';
 
 interface ScannedFile {
   file: File;
@@ -356,139 +459,6 @@ interface ProjectSummary {
   count?: number;
   sizeKb?: number;
   samplePaths?: string[];
-}
-
-interface ResearchMetrics {
-  energy_smell_score: number;
-  carbon_impact_risk_score: number;
-  ess_version: string;
-  cirs_version: string;
-}
-
-interface ComplexityMetricsDetail {
-  cc: number;
-  nd: number;
-  fd: number;
-  sci: number;
-  sloc?: number;
-}
-
-interface CarbonMetadataDetail {
-  zone: string;
-  carbon_intensity: number;
-  is_mock: boolean;
-  timestamp: string;
-  source: string;
-}
-
-interface FindingComparisonItem {
-  rule_id: string;
-  rule_name: string;
-  category: string;
-  line_number?: number | null;
-  confidence_before: number;
-  confidence_after: number;
-  is_resolved: boolean;
-}
-
-interface PostRefactorEstimation {
-  cirs_before?: number;
-  cirs_after?: number;
-  ess_before?: number;
-  ess_after?: number;
-  sci_before?: number;
-  sci_after?: number;
-  complexity_before?: ComplexityMetricsDetail;
-  complexity_after?: ComplexityMetricsDetail;
-  energy_before_joules?: number;
-  energy_after_joules?: number;
-  energy_before_kwh?: number;
-  energy_after_kwh?: number;
-  hazard_before?: number;
-  hazard_after?: number;
-  exposure_before?: number;
-  exposure_after?: number;
-  predicted_reduction_percent?: number;
-  measured_reduction_percent?: number;
-  findings_comparison?: FindingComparisonItem[];
-  structural_changes_summary?: string[];
-  carbon_metadata?: CarbonMetadataDetail;
-  measurement_reliability?: string;
-  smells_before?: number;
-  smells_after?: number;
-  smell_burden_before?: number;
-  smell_burden_after?: number;
-}
-
-interface AnalyzeResponse {
-  filename?: string;
-  original_code?: string;
-  timestamp?: string;
-  pipeline_raw?: {
-    energy_smell_report?: {
-      summary?: { total_findings?: number; high_severity_count?: number; medium_severity_count?: number; low_severity_count?: number; findings_by_severity?: Record<string, number> };
-      findings?: any[];
-    };
-    energy_result?: { energy?: { energy_joules?: number; energy_kwh?: number } };
-    carbon_result?: { carbon_data?: { carbon_intensity?: number; zone?: { display_name?: string; zone_key?: string } } };
-    complexity_metrics?: { cyclomatic_complexity?: number; max_nesting_depth?: number; function_density?: number; sloc?: number };
-    complexity_score?: { structural_complexity_index?: number; heuristic_risk_score?: number };
-    analysis?: { total_lines_of_code?: number; functions?: any[] };
-  };
-  research_metrics?: ResearchMetrics;
-  recommendations?: any;
-  optimized_code?: string;
-  auto_applied_fixes?: ASTCodeFix[];
-  manual_fixes?: ASTCodeFix[];
-  post_refactor_estimation?: PostRefactorEstimation;
-  findings?: any[];
-}
-
-interface ASTCodeFix {
-  rule_id?: string;
-  rule_name?: string;
-  description?: string;
-  line_number?: number | null;
-  line_start?: number | null;
-  line_end?: number | null;
-  original_code?: string | null;
-  replacement_code?: string | null;
-  unavailable_reason?: string;
-  is_auto_applied?: boolean;
-}
-
-interface ProjectFileResult {
-  filename: string;
-  relative_path: string;
-  lines_of_code: number;
-  status: 'success' | 'error';
-  error_message?: string | null;
-  findings_count: number;
-  sci: number;
-  ess: number;
-  cirs: number;
-  energy_joules: number;
-  analysis_time_sec: number;
-  single_file_response?: AnalyzeResponse;
-  original_code?: string;
-}
-
-interface ProjectAnalyzeResponse {
-  project_name: string;
-  timestamp: string;
-  total_files: number;
-  successful_files: number;
-  error_files: number;
-  total_lines_of_code: number;
-  total_findings: number;
-  avg_sci: number;
-  avg_ess: number;
-  avg_cirs: number;
-  total_cirs: number;
-  total_energy_joules: number;
-  total_energy_kwh: number;
-  total_analysis_time_sec: number;
-  files: ProjectFileResult[];
 }
 
 export default function App() {
@@ -504,13 +474,14 @@ export default function App() {
   const [globalAverage, setGlobalAverage] = useState(true);
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [projectResult, setProjectResult] = useState<ProjectAnalyzeResponse | null>(null);
-  const [forecast, setForecast] = useState<any>(null);
+  const [forecast, setForecast] = useState<ForecastResponse | null>(null);
   const [forecastLoading, setForecastLoading] = useState(false);
   const [forecastError, setForecastError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [projectResponseOutdated, setProjectResponseOutdated] = useState(false);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('codecarbon-theme') === 'dark');
 
   const [projectZipFile, setProjectZipFile] = useState<File | null>(null);
@@ -543,7 +514,13 @@ export default function App() {
   })(); }, []);
 
   useEffect(() => {
-    if (view === 'schedule') {
+    if (view === 'schedule' || view === 'impact') {
+      if (analysisMode === 'project' && projectResult?.scheduling?.status === 'available') {
+        setForecast(projectResult.scheduling as ForecastResponse);
+        setForecastError(null);
+        setForecastLoading(false);
+        return;
+      }
       const fileJoules = result?.pipeline_raw?.energy_result?.energy?.energy_joules;
       const targetJoules = (analysisMode === 'project' && projectResult)
         ? (projectResult.total_energy_joules || 100.0)
@@ -553,7 +530,7 @@ export default function App() {
       setForecastError(null);
       fetch(forecastUrl)
         .then(async response => {
-          setForecast(await readApiJson(response, forecastUrl));
+          setForecast(await readApiJson<ForecastResponse>(response, forecastUrl));
           setForecastError(null);
         })
         .catch((err) => {
@@ -601,18 +578,58 @@ export default function App() {
 
   // Individual Findings count from backend summary / findings for single file
   const totalFindingsCount =
-    raw.energy_smell_report?.summary?.total_findings ??
     (Array.isArray(raw.energy_smell_report?.findings) ? raw.energy_smell_report.findings.length : undefined) ??
+    raw.energy_smell_report?.summary?.total_findings ??
     (Array.isArray(result?.findings) ? result.findings.length : recommendations.length);
 
   // Carbon intensity: Primary value from backend response, fallback to frontend selectedZone ONLY if missing
-  const backendCarbonIntensity = (analysisMode === 'project' && projectResult?.files?.[0]?.single_file_response?.post_refactor_estimation?.carbon_metadata?.carbon_intensity)
+  const projectReferenceFile = projectResult?.files.find(file => file.status === 'success' && file.single_file_response);
+  const projectCarbonMetadata = projectReferenceFile?.single_file_response?.post_refactor_estimation?.carbon_metadata;
+  const backendCarbonIntensity = (analysisMode === 'project' && projectResult?.carbon_intensity)
+    ?? (analysisMode === 'project' && projectCarbonMetadata?.carbon_intensity)
     ?? postRefactor.carbon_metadata?.carbon_intensity
     ?? carbon.carbon_intensity;
 
   const carbonIntensityToDisplay = (backendCarbonIntensity !== undefined && backendCarbonIntensity !== null)
     ? backendCarbonIntensity
     : currentZone?.carbon_intensity;
+  const carbonSourceType = analysisMode === 'project'
+    ? projectResult?.carbon_source_type ?? projectCarbonMetadata?.source_type ?? (projectCarbonMetadata?.is_mock ? 'mock' : 'unknown')
+    : postRefactor.carbon_metadata?.source_type ?? (postRefactor.carbon_metadata?.is_mock ? 'mock' : 'unknown');
+  const carbonSourceZone = analysisMode === 'project'
+    ? projectResult?.carbon_zone ?? projectCarbonMetadata?.zone ?? zone
+    : postRefactor.carbon_metadata?.zone ?? carbon.zone?.zone_key ?? zone;
+  const projectBefore = projectResult?.project_before;
+  const projectAfter = projectResult?.project_after;
+  const impactForecast = (projectResult?.scheduling?.status === 'available'
+    ? projectResult.scheduling as ForecastResponse
+    : forecast);
+  const projectBeforeEnergy = Number(projectBefore?.energy ?? projectResult?.total_energy_joules ?? 0);
+  const projectAfterEnergy = Number(projectAfter?.energy ?? projectBeforeEnergy);
+  const impactCurrentIntensity = Number(impactForecast?.intensity_now ?? projectResult?.carbon_intensity ?? impactForecast?.current_carbon_intensity ?? carbonIntensityToDisplay ?? 0);
+  const impactForecastMinimum = Number(impactForecast?.forecast_minimum_intensity ?? impactForecast?.lowest_forecast_intensity ?? impactCurrentIntensity);
+  // Do not model the recommended window as a carbon increase when every forecast
+  // hour is dirtier than the project's current baseline.
+  const impactScheduledIntensity = Number(impactForecast?.intensity_window ?? Math.min(impactCurrentIntensity, impactForecastMinimum));
+  const cirsSchedulingRatio = impactCurrentIntensity > 0 ? impactScheduledIntensity / impactCurrentIntensity : 1;
+  const impactBeforeValues = {
+    energy: projectBeforeEnergy,
+    carbon: projectBeforeEnergy / 3_600_000 * impactCurrentIntensity,
+    ess: Number(projectBefore?.ess ?? 0),
+    cirs: Number(projectResult?.total_cirs ?? projectBefore?.cirs ?? 0),
+  };
+  const impactAfterValues = {
+    energy: projectAfterEnergy,
+    carbon: projectAfterEnergy / 3_600_000 * impactScheduledIntensity,
+    ess: Number(projectAfter?.ess ?? impactBeforeValues.ess),
+    cirs: Number(projectAfter?.cirs ?? impactBeforeValues.cirs) * cirsSchedulingRatio,
+  };
+  const impactRows = [
+    { name: 'Energy', unit: 'modeled J', digits: 2, before: impactBeforeValues.energy, after: impactAfterValues.energy },
+    { name: 'Carbon footprint', unit: 'modeled gCO₂eq/run', digits: 6, before: impactBeforeValues.carbon, after: impactAfterValues.carbon },
+    { name: 'ESS', unit: 'summed score', digits: 3, before: impactBeforeValues.ess, after: impactAfterValues.ess },
+    { name: 'CIRS', unit: 'summed risk-weighted score', digits: 6, before: impactBeforeValues.cirs, after: impactAfterValues.cirs },
+  ];
 
   // Complexity metrics for single file
   const rawComplexity = raw.complexity_metrics || {};
@@ -682,6 +699,9 @@ export default function App() {
 
     return Array.from(map.values()).sort((a, b) => b.priority_score - a.priority_score);
   }, [projectResult]);
+  const projectRecommendationBadge = projectResult
+    ? `${projectAggregatedRecommendations.length} suggestions · ${projectResult?.auto_fixable_count ?? 0} auto-fixable · ${projectResult?.auto_applied_count ?? 0} applied`
+    : `${recommendations.length} recommendations`;
 
   // Project-wide findings category distribution
   const projectCategoryDistribution = useMemo(() => {
@@ -785,12 +805,29 @@ export default function App() {
     return projectCategoryDistribution.filter(c => c.count > 0);
   }, [projectCategoryDistribution]);
 
+  const projectEssDistribution = useMemo(() => {
+    if (!projectResult?.files) return [];
+    const bins = [
+      { label: '0–<2', min: 0, max: 2, count: 0 },
+      { label: '2–<4', min: 2, max: 4, count: 0 },
+      { label: '4–<6', min: 4, max: 6, count: 0 },
+      { label: '6–<8', min: 6, max: 8, count: 0 },
+      { label: '8–10', min: 8, max: 10.000001, count: 0 },
+    ];
+    for (const file of projectResult.files) {
+      if (file.status !== 'success') continue;
+      const bin = bins.find(item => file.ess >= item.min && file.ess < item.max);
+      if (bin) bin.count += 1;
+    }
+    return bins;
+  }, [projectResult]);
+
   const singleFileComplexityData = useMemo(() => {
     if (!result) return [];
     return [
       { name: 'CC', full: 'Cyclomatic Complexity', value: complexity.cc, rawValue: fixed(complexity.cc, 1), unit: 'decision paths' },
       { name: 'ND', full: 'Nesting Depth', value: complexity.nd, rawValue: fixed(complexity.nd, 0), unit: 'max depth' },
-      { name: 'FD (x100)', full: 'Function Density', value: Number((complexity.fd * 100).toFixed(2)), rawValue: fixed(complexity.fd, 4), unit: 'funcs/LOC' },
+      { name: 'FD (x100)', full: 'Function Density', value: Number((complexity.fd * 100).toFixed(2)), rawValue: fixed(complexity.fd, 4), unit: 'funcs/SLOC' },
       { name: 'SCI (x100)', full: 'Structural Index', value: Number((complexity.sci * 100).toFixed(2)), rawValue: fixed(complexity.sci, 4), unit: 'index (0-1)' }
     ];
   }, [result, complexity]);
@@ -798,11 +835,11 @@ export default function App() {
   const singleFileRefactorComparisonData = useMemo(() => {
     if (!postRefactor || postRefactor.sci_before === undefined) return [];
     return [
-      { name: 'Structural complexity (SCI)', before: postRefactor.sci_before || 0, after: postRefactor.sci_after || 0, unit: 'index (0–1)', decimals: 4 },
-      { name: 'Energy smell score (ESS)', before: postRefactor.ess_before || 0, after: postRefactor.ess_after || 0, unit: 'score / 10', decimals: 2 },
+      { name: 'Structural complexity (SCI)', before: postRefactor.sci_before || 0, after: postRefactor.sci_after || 0, unit: 'index (0–1)', decimals: 6 },
+      { name: 'Energy smell score (ESS)', before: postRefactor.ess_before || 0, after: postRefactor.ess_after || 0, unit: 'score / 10', decimals: 4 },
       { name: 'Actionable energy smells', before: postRefactor.smells_before || 0, after: postRefactor.smells_after || 0, unit: 'findings', decimals: 0 },
-      { name: 'Modeled energy', before: postRefactor.energy_before_joules || 0, after: postRefactor.energy_after_joules || 0, unit: 'joules', decimals: 3 },
-      { name: 'Research carbon risk (CIRS)', before: postRefactor.cirs_before || 0, after: postRefactor.cirs_after || 0, unit: 'risk index', decimals: 6 }
+      { name: 'Modeled energy', before: postRefactor.energy_before_joules || 0, after: postRefactor.energy_after_joules || 0, unit: 'modeled J (relative)', decimals: 6 },
+      { name: 'Risk-weighted carbon score (CIRS)', before: postRefactor.cirs_before || 0, after: postRefactor.cirs_after || 0, unit: 'unitless score', decimals: 9 }
     ];
   }, [postRefactor]);
 
@@ -874,6 +911,10 @@ export default function App() {
     if (extracting) {
       return setNotice('Reading uploaded file, please wait a moment...');
     }
+    // Prevent a prior project archive name and aggregate values from leaking
+    // into the new standalone report.
+    setProjectResult(null);
+    setAnalysisMode('file');
     setLoading(true);
     setNotice(null);
     try {
@@ -978,6 +1019,8 @@ export default function App() {
       return setNotice('Please select a folder of .py files or a .zip archive before running project analysis.');
     }
     setLoading(true); setNotice(null);
+    setProjectResult(null);
+    setProjectResponseOutdated(false);
     try {
       const form = new FormData();
       let fileToUpload: File;
@@ -1004,8 +1047,11 @@ export default function App() {
       const requestUrl = `${API}/analyze-project`;
       console.log(`[Code-Carbon] Sending POST ${requestUrl} payload...`);
       const response = await fetch(requestUrl, { method: 'POST', body: form });
-      const projData = await readApiJson<ProjectAnalyzeResponse>(response, requestUrl);
+      const rawProjectData = await readApiJson<Partial<ProjectAnalyzeResponse>>(response, requestUrl);
+      const projectIsOutdated = !isCurrentProjectResponse(rawProjectData);
+      const projData = normalizeProjectResponse(rawProjectData);
       console.log(`[Code-Carbon] Project analysis complete:`, projData);
+      setProjectResponseOutdated(projectIsOutdated);
       setProjectResult(projData);
       setAnalysisMode('project');
       navigateView('project');
@@ -1174,6 +1220,8 @@ export default function App() {
     </aside>
 
     <main className="content">
+      <TabErrorBoundary key={view} tabName={view === 'impact' ? 'Impact' : view === 'schedule' ? 'Green Scheduling' : view === 'project' ? 'Project Overview' : view === 'recommendations' ? 'Recommendations' : 'Analysis'}>
+      {projectResponseOutdated && <div className="backend-outdated-banner" role="alert">Backend response is outdated, restart the API. Showing safe fallback values until a fresh analysis is run.</div>}
       <header className="topbar">
         <div>
           <p className="eyebrow">SUSTAINABLE ENGINEERING</p>
@@ -1216,7 +1264,7 @@ export default function App() {
             </button>
           )}
           <button className={`subnav-tab ${view === 'recommendations' ? 'is-active' : ''}`} onClick={() => navigateView('recommendations')}>
-            <Sparkles size={14} /> Recommendations ({analysisMode === 'project' && projectResult ? projectAggregatedRecommendations.length : recommendations.length})
+            <Sparkles size={14} /> {analysisMode === 'project' && projectResult ? projectRecommendationBadge : `Recommendations (${recommendations.length})`}
           </button>
           <button className={`subnav-tab ${view === 'impact' ? 'is-active' : ''}`} onClick={() => navigateView('impact')}>
             <Activity size={14} /> Refactor & Impact
@@ -1415,6 +1463,7 @@ export default function App() {
                     ? 'Analyzing eligible Python files in parallel. Large projects can take a few minutes; keep this page open…'
                     : 'Running AST parsing, EKB smell detection, carbon estimation, and runtime profiling…'}
                 </p>
+                {analysisMode === 'project' && <div className="analysis-progress-track" role="progressbar" aria-label="Project analysis in progress" aria-valuetext="Analysis is running; exact completion is not available yet"><span /></div>}
               </div>
             </div>
           )}
@@ -1471,19 +1520,20 @@ export default function App() {
             <p className="overline">FULL PROJECT SUSTAINABILITY ANALYSIS</p>
             <h2>{projectResult.project_name}</h2>
             <p>{projectResult.total_files} Python files ({projectResult.successful_files} analyzed, {projectResult.error_files} errors) · {projectResult.total_lines_of_code} Total SLOC · Analyzed in {projectResult.total_analysis_time_sec}s</p>
+            <p>Grid intensity: {projectResult.carbon_intensity == null ? 'Unavailable' : `${fixed(projectResult.carbon_intensity, 2)} gCO₂eq/kWh`} · Zone: {projectResult.carbon_zone || 'Unknown'} · Source: {projectResult.carbon_source_type || 'unknown'} ({projectResult.carbon_source || 'provider unavailable'})</p>
           </div>
           <button className="secondary-button" onClick={() => setView('workspace')}>New project analysis <ChevronRight size={17} /></button>
         </div>
 
         <div className="metric-grid">
           <Metric label="Total Files" metric={String(projectResult.total_files)} unit="COUNT" tone="blue" />
-          <Metric label="Total Project SLOC" metric={String(projectResult.total_lines_of_code)} unit="SUM (lines of code)" tone="blue" />
-          <Metric label="Total Individual Findings" metric={String(projectResult.total_findings)} unit="SUM (energy smells)" tone="blue" />
-          <Metric label="Macro-Avg SCI" metric={fixed(projectResult.avg_sci, 4)} unit="MACRO-AVG (index 0-1)" tone="green" />
-          <Metric label="Macro-Avg ESS" metric={fixed(projectResult.avg_ess, 2)} unit="MACRO-AVG (out of 10)" tone="amber" />
-          <Metric label="Total Project Energy" metric={fixed(projectResult.total_energy_joules, 2)} unit={`SUM (${fixed(projectResult.total_energy_kwh, 6)} kWh)`} tone="green" />
-          <Metric label="Primary Research CIRS" metric={fixed(projectResult.avg_cirs, 6)} unit="MACRO-AVG (risk index)" tone="ink" />
-          <Metric label="Total CIRS Capacity" metric={fixed(projectResult.total_cirs, 6)} unit="SUM (risk index)" tone="ink" />
+          <Metric label="Total Project SLOC" metric={fixed(projectResult.total_lines_of_code, 0)} unit="sum across analyzed files" tone="blue" />
+          <Metric label="Finding locations" metric={fixed(projectResult.total_findings, 0)} unit={`${fixed(projectResult.total_rule_count, 0)} per-file rule instances · summed across files`} tone="blue" />
+          <Metric label="Mean SCI per file" metric={fixed(projectResult.avg_sci, 4)} unit="mean · index (0–1)" tone="green" />
+          <Metric label="Mean ESS per file" metric={fixed(projectResult.avg_ess, 2)} unit="mean · score out of 10" tone="amber" />
+          <Metric label="Project energy score" metric={fixed(projectResult.total_energy_joules, 2)} unit="modeled J (relative) · sum across files (one run each)" tone="green" help="Derived from relative model estimates, not metered energy. The aggregate assumes each file runs once." />
+          <Metric label="Mean CIRS per file" metric={fixed(projectResult.avg_cirs, 6)} unit="risk-weighted score (unitless)" tone="ink" help="CIRS research multiplies modeled carbon by a dimensionless SCI and ESS exposure weight; it is not a physical gCO₂eq footprint." />
+          <Metric label="Sum of risk-weighted scores" metric={fixed(projectResult.total_cirs, 6)} unit="unitless · sum across files (one run each)" tone="ink" help="Sum across files assumes each file runs once. Use the unweighted modeled carbon estimate for the carbon footprint." />
         </div>
 
         {/* PROJECT TOP FILES SPOTLIGHT */}
@@ -1500,7 +1550,7 @@ export default function App() {
 
           <div className="estimate-note">
             <strong>How to read these numbers</strong>
-            <span>Energy is estimated from code complexity, hardware profile, and reference power (SCI ÷ HPI × reference power). Carbon is estimated energy converted to kWh × the selected grid intensity. These are model estimates, not direct hardware measurements; project runtime timing is skipped during concurrent analysis.</span>
+            <span>Energy is a relative model score, not metered energy. Carbon is the unweighted estimate from the model score and the selected grid intensity. Project sums assume one run per file, which may not represent how an application is deployed. Grid input: {fixed(carbonIntensityToDisplay, 2)} gCO₂eq/kWh · {carbonSourceZone} · {carbonSourceType}. Runtime timing is skipped during concurrent analysis.</span>
           </div>
           <div className="top-files-grid">
             {topEnergyFiles[0] ? (
@@ -1510,9 +1560,9 @@ export default function App() {
                 </span>
                 <h4 title={topEnergyFiles[0].filename}>{topEnergyFiles[0].filename}</h4>
                 <small title={topEnergyFiles[0].relative_path}>{topEnergyFiles[0].relative_path}</small>
-                <div className="stat-val">{fixed(topEnergyFiles[0].energy_joules, 2)} J</div>
+                <div className="stat-val">{fixed(topEnergyFiles[0].energy_joules, 2)}</div>
                 <div className="stat-sub">
-                  {fixed(topEnergyFiles[0].energy_joules / 3600000.0, 6)} kWh ({fixed((topEnergyFiles[0].energy_joules / (projectResult.total_energy_joules || 1)) * 100, 1)}% of project energy)
+                  Modeled J (relative) · {fixed((topEnergyFiles[0].energy_joules / (projectResult.total_energy_joules || 1)) * 100, 1)}% of the one-run-per-file sum
                 </div>
               </article>
             ) : null}
@@ -1524,9 +1574,9 @@ export default function App() {
                 </span>
                 <h4 title={topCarbonFiles[0].filename}>{topCarbonFiles[0].filename}</h4>
                 <small title={topCarbonFiles[0].relative_path}>{topCarbonFiles[0].relative_path}</small>
-                <div className="stat-val">{fixed(topCarbonFiles[0].carbonGrams, 4)} g</div>
+                <div className="stat-val">{fixed(topCarbonFiles[0].carbonGrams, 4)}</div>
                 <div className="stat-sub">
-                  gCO₂eq per run (CIRS score: {fixed(topCarbonFiles[0].cirs, 6)})
+                  Modeled, unweighted gCO₂eq per run · risk-weighted score {fixed(topCarbonFiles[0].cirs, 6)} (unitless)
                 </div>
               </article>
             ) : null}
@@ -1534,13 +1584,13 @@ export default function App() {
             {topFindingsFiles[0] ? (
               <article className="top-file-card">
                 <span className="top-file-badge smells">
-                  <Sparkles size={12} /> Most Smell-Dense File
+                  <Sparkles size={12} /> Most Rule-Dense File
                 </span>
                 <h4 title={topFindingsFiles[0].filename}>{topFindingsFiles[0].filename}</h4>
                 <small title={topFindingsFiles[0].relative_path}>{topFindingsFiles[0].relative_path}</small>
-                <div className="stat-val">{topFindingsFiles[0].findings_count} Smells</div>
+                <div className="stat-val">{fixed(topFindingsFiles[0].rule_count, 0)} rules</div>
                 <div className="stat-sub">
-                  ESS Score: {fixed(topFindingsFiles[0].ess, 2)} / 10 ({topFindingsFiles[0].lines_of_code} LOC)
+                  {fixed(topFindingsFiles[0].findings_count, 0)} finding locations · ESS {fixed(topFindingsFiles[0].ess, 2)} / 10 ({fixed(topFindingsFiles[0].lines_of_code, 0)} SLOC)
                 </div>
               </article>
             ) : null}
@@ -1554,7 +1604,7 @@ export default function App() {
               <p className="overline">ENERGY & CARBON METRICS BY FILE</p>
               <h3>Resource & Emissions Breakdown</h3>
             </div>
-            <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
+              <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
               Top 10 of {projectResult.successful_files} successful files · full list below
             </span>
           </div>
@@ -1564,25 +1614,25 @@ export default function App() {
               <div className="panel-head">
                 <div>
                   <p className="overline">ENERGY CONSUMPTION</p>
-                  <h3>Energy Consumption by File (Joules)</h3>
+                  <h3>Relative Energy Score by File</h3>
                 </div>
-                  <span>Estimated per run</span>
+                  <span>Modeled J (relative) · one run per file</span>
               </div>
               <RankedMetricBars
                 items={projectFilesEnergyData.map(item => ({ name: item.name, relativePath: item.relativePath, value: item.energyJoules }))}
                 color="#2f6b57"
                 label="Top files by estimated energy"
-                formatValue={value => `${fixed(value, 2)} J`}
+                formatValue={value => fixed(value, 2)}
               />
             </section>
 
             <section className="panel">
               <div className="panel-head">
                 <div>
-                  <p className="overline">CARBON IMPACT</p>
-                  <h3>Carbon Impact by File (gCO₂eq)</h3>
+                  <p className="overline">CARBON FOOTPRINT ESTIMATE</p>
+                  <h3>Unweighted modeled carbon by file</h3>
                 </div>
-                  <span>{fixed(carbonIntensityToDisplay, 1)} gCO₂eq/kWh grid</span>
+                  <span>{fixed(carbonIntensityToDisplay, 1)} gCO₂eq/kWh · {carbonSourceZone} · {carbonSourceType}</span>
               </div>
               <RankedMetricBars
                 items={projectFilesCarbonData.map(item => ({ name: item.name, relativePath: item.relativePath, value: item.carbonGrams }))}
@@ -1642,10 +1692,10 @@ export default function App() {
             <section className="panel">
               <div className="panel-head">
                 <div>
-                  <p className="overline">CARBON RISK SCORE</p>
-                  <h3>CIRS by File</h3>
+                  <p className="overline">RISK-WEIGHTED SCORE</p>
+                  <h3>CIRS research score by file</h3>
                 </div>
-                  <span>Higher is riskier</span>
+                  <span>Unitless · higher is riskier</span>
               </div>
               <RankedMetricBars
                 items={projectFilesCirsData.map(item => ({ name: item.name, relativePath: item.relativePath, value: item.cirs }))}
@@ -1665,11 +1715,11 @@ export default function App() {
               <h3>Findings by Category</h3>
             </div>
             <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
-              Total {projectResult.total_findings} smells detected
+              {fixed(projectResult.total_rule_count, 0)} per-file rule instances · {fixed(projectResult.total_findings, 0)} finding locations
             </span>
           </div>
 
-          <div className="chart-grid-single">
+          <div className="chart-grid-2">
             <section className="panel">
               <div className="panel-head">
                 <div>
@@ -1705,6 +1755,28 @@ export default function App() {
                 <ChartFallback title="No data available for this visualization" message="No findings were reported for any of the categories." />
               )}
             </section>
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <p className="overline">PER-FILE DISTRIBUTION</p>
+                  <h3>ESS score distribution</h3>
+                </div>
+                <span>{projectResult.successful_files} successful files · scale 0–10</span>
+              </div>
+              {projectEssDistribution.length ? (
+                <div className="chart" style={{ marginTop: '14px' }}>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <BarChart data={projectEssDistribution} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e4e2dc" />
+                      <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(value: any) => [`${value} file(s)`, 'Count']} />
+                      <Bar dataKey="count" name="Files" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : <ChartFallback title="No ESS scores available" />}
+            </section>
           </div>
         </section>
 
@@ -1712,7 +1784,7 @@ export default function App() {
           <div className="panel-head" style={{ alignItems: 'center' }}>
             <div>
               <p className="overline">PROJECT FILE DRILLDOWN</p>
-              <h3>Analyzed Source Files ({sortedProjectFiles.length} shown · {projectResult.successful_files} succeeded · {projectResult.error_files} failed)</h3>
+              <h3>Analyzed Source Files ({fixed(sortedProjectFiles.length, 0)} shown · {fixed(projectResult.successful_files, 0)} succeeded · {fixed(projectResult.error_files, 0)} failed)</h3>
             </div>
             <div className="file-table-controls">
               <label className="search-field" style={{ width: '220px', height: '36px' }}>
@@ -1735,11 +1807,12 @@ export default function App() {
                     File Name {sortColumn === 'filename' ? (sortAsc ? '▲' : '▼') : ''}
                   </th>
                   <th onClick={() => { if (sortColumn === 'lines_of_code') setSortAsc(!sortAsc); else { setSortColumn('lines_of_code'); setSortAsc(false); } }} style={{ cursor: 'pointer' }}>
-                    LOC {sortColumn === 'lines_of_code' ? (sortAsc ? '▲' : '▼') : ''}
+                    SLOC {sortColumn === 'lines_of_code' ? (sortAsc ? '▲' : '▼') : ''}
                   </th>
                   <th>Status</th>
+                  <th>Sandbox execution</th>
                   <th onClick={() => { if (sortColumn === 'findings_count') setSortAsc(!sortAsc); else { setSortColumn('findings_count'); setSortAsc(false); } }} style={{ cursor: 'pointer' }}>
-                    Findings {sortColumn === 'findings_count' ? (sortAsc ? '▲' : '▼') : ''}
+                    Rules · locations {sortColumn === 'findings_count' ? (sortAsc ? '▲' : '▼') : ''}
                   </th>
                   <th onClick={() => { if (sortColumn === 'sci') setSortAsc(!sortAsc); else { setSortColumn('sci'); setSortAsc(false); } }} style={{ cursor: 'pointer' }}>
                     SCI {sortColumn === 'sci' ? (sortAsc ? '▲' : '▼') : ''}
@@ -1748,17 +1821,17 @@ export default function App() {
                     ESS {sortColumn === 'ess' ? (sortAsc ? '▲' : '▼') : ''}
                   </th>
                   <th onClick={() => { if (sortColumn === 'cirs') setSortAsc(!sortAsc); else { setSortColumn('cirs'); setSortAsc(false); } }} style={{ cursor: 'pointer' }}>
-                    Research CIRS {sortColumn === 'cirs' ? (sortAsc ? '▲' : '▼') : ''}
+                    Risk score {sortColumn === 'cirs' ? (sortAsc ? '▲' : '▼') : ''}
                   </th>
                   <th onClick={() => { if (sortColumn === 'energy_joules') setSortAsc(!sortAsc); else { setSortColumn('energy_joules'); setSortAsc(false); } }} style={{ cursor: 'pointer' }}>
-                    Energy (J) {sortColumn === 'energy_joules' ? (sortAsc ? '▲' : '▼') : ''}
+                    Modeled J (relative) {sortColumn === 'energy_joules' ? (sortAsc ? '▲' : '▼') : ''}
                   </th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {sortedProjectFiles.length === 0 && (
-                  <tr><td colSpan={9} className="empty-table-message">No files match the current search and status filter.</td></tr>
+                  <tr><td colSpan={10} className="empty-table-message">No files match the current search and status filter.</td></tr>
                 )}
                 {sortedProjectFiles.map((fileItem: any) => (
                   <tr key={fileItem.relative_path} className={fileItem.status === 'error' ? 'row-error' : ''}>
@@ -1776,7 +1849,8 @@ export default function App() {
                       <span className={`status-badge ${fileItem.status}`}>{fileItem.status === 'error' ? 'Failed' : 'Successful'}</span>
                       {fileItem.status === 'error' && <small className="file-error-reason">{fileItem.error_message || 'Analysis could not be completed.'}</small>}
                     </td>
-                    <td>{fileItem.status === 'success' ? <span className={`findings-badge ${fileItem.findings_count > 0 ? 'has-findings' : ''}`}>{fileItem.findings_count}</span> : '—'}</td>
+                    <td>{fileItem.execution_status === 'not_executed' ? 'Not executed (static analysis)' : fileItem.execution_status}</td>
+                    <td>{fileItem.status === 'success' ? <span className={`findings-badge ${fileItem.findings_count > 0 ? 'has-findings' : ''}`}>{fixed(fileItem.rule_count, 0)} rules · {fixed(fileItem.findings_count, 0)} locations</span> : '—'}</td>
                     <td>{fileItem.status === 'success' ? fixed(fileItem.sci, 4) : '—'}</td>
                     <td>{fileItem.status === 'success' ? fixed(fileItem.ess, 2) : '—'}</td>
                     <td>{fileItem.status === 'success' ? fixed(fileItem.cirs, 6) : '—'}</td>
@@ -1821,16 +1895,16 @@ export default function App() {
         </div>
 
         <div className="metric-grid">
-          <Metric label="Estimated Energy" metric={fixed(energy.energy_joules, 3)} unit="joules" tone="green" />
-          <Metric label="Research CIRS" metric={fixed(metrics?.carbon_impact_risk_score, 6)} unit="risk index" tone="ink" />
+          <Metric label="Estimated Energy" metric={fixed(energy.energy_joules, 3)} unit="modeled J (relative)" tone="green" />
+              <Metric label="Risk-weighted carbon score (CIRS)" metric={fixed(metrics?.carbon_impact_risk_score, 6)} unit="unitless score" tone="ink" />
           <Metric label="Energy Smell Score" metric={fixed(metrics?.energy_smell_score, 2)} unit="out of 10" tone="amber" />
-          <Metric label="Individual Findings" metric={String(totalFindingsCount)} unit="findings" tone="blue" />
+          <Metric label="Finding locations" metric={String(totalFindingsCount)} unit="detector locations in this file" tone="blue" />
         </div>
 
         <div className="metric-grid" style={{ marginTop: '16px' }}>
           <Metric label="Cyclomatic Complexity (CC)" metric={fixed(complexity.cc, 1)} unit="decision paths" tone="blue" />
           <Metric label="Nesting Depth (ND)" metric={fixed(complexity.nd, 0)} unit="max depth" tone="blue" />
-          <Metric label="Function Density (FD)" metric={fixed(complexity.fd, 4)} unit="funcs / LOC" tone="blue" />
+          <Metric label="Function Density (FD)" metric={fixed(complexity.fd, 4)} unit="funcs / SLOC" tone="blue" />
           <Metric label="Source Lines (SLOC)" metric={fixed(complexity.sloc, 0)} unit="lines of code" tone="blue" />
           <Metric label="Structural Index (SCI)" metric={fixed(complexity.sci, 4)} unit="index (0-1)" tone="green" />
         </div>
@@ -1865,7 +1939,7 @@ export default function App() {
           <section className="panel">
             <div className="panel-head">
               <div><p className="overline">COMPLEXITY PROFILE</p><h3>Code Structure Metrics</h3></div>
-              <span>SLOC: {complexity.sloc}</span>
+              <span>SLOC: {fixed(complexity.sloc, 0)}</span>
             </div>
             {singleFileComplexityData.length ? (
               <div className="chart">
@@ -1895,8 +1969,9 @@ export default function App() {
             <p className="overline">CARBON / ENERGY SUMMARY</p>
             <h3>{display(carbon.zone?.display_name, currentZone?.display_name)}</h3>
             <div className="intensity"><strong>{fixed(carbonIntensityToDisplay, 2)}</strong><span>gCO₂eq/kWh</span></div>
+            <p className="soft-copy" style={{ marginTop: '-8px' }}>{carbonSourceZone} · {carbonSourceType} · {postRefactor.carbon_metadata?.source || ''}</p>
             <p className="soft-copy">
-              Estimated single-run footprint: {fixed(((energy.energy_joules || 0) / 3600000.0) * carbonIntensityToDisplay, 6)} gCO₂eq from {fixed(energy.energy_joules, 3)} model-estimated joules. This is a model estimate, not a direct power measurement.
+              Estimated unweighted carbon: {fixed(((energy.energy_joules || 0) / 3600000.0) * carbonIntensityToDisplay, 6)} modeled gCO₂eq/run from a relative energy score, not metered energy.
             </p>
             <button className="text-button" onClick={() => setView('schedule')}>Explore better execution times <ArrowRight size={15} /></button>
           </section>
@@ -1905,8 +1980,9 @@ export default function App() {
             <section className="panel">
               <div className="panel-head">
                   <div><p className="overline">GENERATED REFACTOR ESTIMATE</p><h3>Metrics Before vs After</h3></div>
-                  <span>Model estimates; timing is separate</span>
+                  <span>Modeled estimate; assumes 10 iterations per loop. Timing is separate.</span>
               </div>
+              <p className="soft-copy">SCI is structural; loop cost is applied in the runtime estimate.</p>
               <MetricComparison rows={singleFileRefactorComparisonData} />
             </section>
           ) : (
@@ -1921,13 +1997,14 @@ export default function App() {
                   <span style={{ fontSize: '10px', color: 'var(--muted)' }}>Version: {metrics?.ess_version || '1.0.0'}</span>
                 </div>
                 <div style={{ background: 'var(--paper)', padding: '14px', borderRadius: '8px', border: '1px solid var(--line)' }}>
-                  <p style={{ margin: 0, fontSize: '11px', color: 'var(--muted)' }}>Carbon Risk Score (CIRS)</p>
+                  <p style={{ margin: 0, fontSize: '11px', color: 'var(--muted)' }}>Risk-weighted carbon score (CIRS)</p>
                   <strong style={{ fontSize: '20px', color: 'var(--forest)', display: 'block', marginTop: '4px' }}>{fixed(metrics?.carbon_impact_risk_score, 6)}</strong>
-                  <span style={{ fontSize: '10px', color: 'var(--muted)' }}>risk index</span>
+                  <span style={{ fontSize: '10px', color: 'var(--muted)' }}>unitless risk-weighted score</span>
                 </div>
               </div>
             </section>
           )}
+          {result && <CarbonScenarioComparison result={result} currentIntensity={carbonIntensityToDisplay} />}
         </div>
       </section>}
 
@@ -1987,25 +2064,50 @@ export default function App() {
           <section className="report">
             <div className="report-hero">
               <div>
-                <p className="overline">FULL PROJECT ENERGY & CARBON OUTLOOK</p>
+                <p className="overline">PROJECT REFACTOR IMPACT · MODELED ESTIMATES</p>
                 <h2>{projectResult.project_name} — Project Impact</h2>
-                <p>Summed energy footprint, regional carbon intensity, and Research CIRS capacity for the entire project.</p>
+                <p>After combines accepted refactors with the forecast execution window. Project totals assume one run per file; all values are modeled estimates, not measurements.</p>
               </div>
-            </div>
-
-            <div className="metric-grid">
-              <Metric label="Total Project Energy" metric={`${fixed(projectResult.total_energy_joules, 2)} J`} unit={`SUM (${fixed(projectResult.total_energy_kwh, 6)} kWh)`} tone="green" />
-              <Metric label="Project Carbon Footprint" metric={fixed(projectResult.total_energy_kwh * carbonIntensityToDisplay, 4)} unit="gCO₂eq" tone="amber" />
-              <Metric label="Grid Carbon Intensity" metric={fixed(carbonIntensityToDisplay, 2)} unit="gCO₂eq/kWh" tone="blue" />
-              <Metric label="Primary Research CIRS" metric={fixed(projectResult.avg_cirs, 6)} unit="MACRO-AVG (risk index)" tone="ink" />
-              <Metric label="Total CIRS Capacity" metric={fixed(projectResult.total_cirs, 6)} unit="SUM (risk index)" tone="ink" />
             </div>
 
             <section className="panel project-files-panel" style={{ marginTop: '20px' }}>
               <div className="panel-head">
+                  <div><p className="overline">PROJECT TOTALS · MODELED ESTIMATES</p><h3>Before | After | Delta</h3></div>
+                  <span>After = accepted fixes + green scheduling window</span>
+              </div>
+              <div className="project-table-wrap">
+                <table className="project-table">
+                  <thead><tr><th>Estimated metric</th><th>Before</th><th>After</th><th>Delta (after − before)</th></tr></thead>
+                  <tbody>
+                    {impactRows.map(row => <tr key={row.name}><td><strong>{row.name}</strong></td><td>{fixed(row.before, row.digits)} {row.unit}</td><td>{fixed(row.after, row.digits)} {row.unit}</td><td>{fixed(row.after - row.before, row.digits)} {row.unit}</td></tr>)}
+                  </tbody>
+                </table>
+              </div>
+              <p className="soft-copy" style={{ padding: '0 16px 14px' }}>Scheduling changes carbon and CIRS estimates only; Energy stays at the accepted-refactor estimate. CIRS includes carbon intensity as a term, so its After estimate uses the same window intensity. All figures are modeled, not measured. Source: {impactForecast?.source || projectResult?.carbon_source || 'Unavailable'} · {impactForecast?.source_type || projectResult?.carbon_source_type || 'unknown'}.</p>
+            </section>
+
+            <section className="panel project-files-panel" style={{ marginTop: '20px' }}>
+              <div className="panel-head">
+                <div><p className="overline">GREEN SCHEDULING · MODELED</p><h3>Recommended execution window</h3></div>
+                <span>{impactForecast?.source || 'Forecast provider'} · {impactForecast?.source_type || 'source unavailable'}{impactForecast?.source_type !== 'live' && <b className="mock-data-badge">MOCK DATA</b>}</span>
+              </div>
+              {forecastLoading && !impactForecast ? <p className="soft-copy" style={{ padding: '0 16px 16px' }}>Loading the project forecast…</p> : (forecastError && !impactForecast) ? <p className="soft-copy" role="status" style={{ padding: '0 16px 16px' }}>Forecast unavailable: {forecastError}. Carbon comparison currently uses the selected grid intensity without a schedule adjustment.</p> : (
+                <div className="schedule-window-card" style={{ margin: '0 16px 16px' }}>
+                  <strong>{impactForecast?.has_cleaner_window === false ? 'No cleaner forecast window · use current schedule' : `${formatWindowTime(impactForecast?.window_start || impactForecast?.recommended_execution_time || undefined)}${impactForecast?.window_end ? ` to ${formatHour(impactForecast.window_end ?? undefined)}` : ''}`}</strong>
+                  <span>{impactForecast?.has_cleaner_window === false ? `Best forecast hour: ${formatWindowTime(impactForecast?.recommended_execution_time || undefined)} · ` : ''}Intensity now {fixed(impactCurrentIntensity, 2)} → applied in window {fixed(impactScheduledIntensity, 2)} gCO₂eq/kWh · {fixed(impactForecast?.scheduling_reduction_percent ?? 0, 2)}% carbon reduction{impactForecast?.has_cleaner_window === false ? ` (best forecast ${fixed(impactForecastMinimum, 2)} is not cleaner)` : ''}</span>
+                </div>
+              )}
+            </section>
+
+            {(projectResult?.auto_applied_count ?? 0) === 0 && (
+              <div className="modeled-no-improvement" role="status"><strong>No modeled change</strong><span>No automatic fix was accepted. The per-file table gives the reason for each file.</span></div>
+            )}
+
+            <section className="panel project-files-panel" style={{ marginTop: '20px' }}>
+              <div className="panel-head">
                 <div>
-                  <p className="overline">PROJECT REFACTORING SCOPE</p>
-                  <h3>Automated AST Refactoring by File ({projectResult.files.length} files)</h3>
+                  <p className="overline">PER-FILE MODELED COMPARISON</p>
+                  <h3>Estimated before and after · {projectResult?.files?.length ?? 0} files</h3>
                 </div>
               </div>
               <div className="project-table-wrap">
@@ -2013,28 +2115,31 @@ export default function App() {
                   <thead>
                     <tr>
                       <th>File Name</th>
-                      <th>LOC</th>
+                      <th>SLOC</th>
                       <th>SCI (Before → After)</th>
-                      <th>Energy Joules</th>
-                      <th>Refactor Fixes Available</th>
+                      <th>Energy (Before → After, modeled J)</th>
+                      <th>Fix status</th>
+                      <th>Reason</th>
                       <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {projectResult.files.map((fileItem: any, idx: number) => {
+                    {(projectResult?.files ?? []).map((fileItem: ProjectFileResult, idx: number) => {
                       const post = fileItem.single_file_response?.post_refactor_estimation || {};
-                      const fixes = fileItem.single_file_response?.auto_applied_fixes || [];
                       return (
                         <tr key={idx}>
                           <td><strong>{fileItem.filename}</strong></td>
                           <td>{fileItem.lines_of_code}</td>
                           <td>{post.sci_before !== undefined ? `${fixed(post.sci_before, 3)} → ${fixed(post.sci_after, 3)}` : fixed(fileItem.sci, 3)}</td>
-                          <td>{fixed(fileItem.energy_joules, 2)}</td>
-                          <td>{fixes.length > 0 ? <span className="status-badge success">{fixes.length} AST Fix(es)</span> : <span className="status-badge">Clean</span>}</td>
+                          <td>{fixed(fileItem.before_energy, 2)} → {fixed(fileItem.after_energy, 2)}</td>
+                          <td><span className={`status-badge ${fileItem?.fix_status === 'applied' ? 'success' : ''}`}>{(fileItem?.fix_status ?? 'not_auto_fixable').replaceAll('_', ' ')}</span></td>
+                          <td>{fileItem?.fix_reason || 'No reason was returned by the backend.'}</td>
                           <td>
                             {fileItem.single_file_response && (
                               <button className="small-button" onClick={() => {
-                                setResult(fileItem.single_file_response);
+                                const detail = fileItem.single_file_response;
+                                if (!detail) return;
+                                setResult(detail);
                                 setFilename(fileItem.filename);
                                 setCode(fileItem.original_code || '');
                                 setAnalysisMode('file');
@@ -2058,7 +2163,7 @@ export default function App() {
               <div>
                 <p className="overline">{projectResult ? `INSPECTING FILE IN ${projectResult.project_name.toUpperCase()}` : 'IMPROVEMENT OUTLOOK & AFTER-ESTIMATION'}</p>
                 <h2>{result.filename || filename} — Refactor & Impact</h2>
-                <p>AST transformation results, post-refactor estimation comparison, and sandboxed execution speedup for {result.filename || filename}.</p>
+                <p>AST transformation results and modeled impact for {result.filename || filename}; uploaded code execution is disabled by default.</p>
               </div>
               {projectResult && (
                 <button className="secondary-button back-to-project-hero-btn" onClick={() => { setAnalysisMode('project'); navigateView('project'); }}>
@@ -2067,15 +2172,40 @@ export default function App() {
               )}
             </div>
 
+            {postRefactor.no_modeled_improvement && <div className="modeled-no-improvement" role="status"><strong>No modeled improvement</strong><span>The automatic change was withheld because energy, CIRS, ESS, SCI, and actionable smell counts must not regress, with energy or CIRS improving. No transformed code is recommended.</span></div>}
+
             {postRefactor.sci_before !== undefined && (
               <div className="refactor-impact-grid metric-grid">
                 <Metric label="SCI (Before → After)" metric={`${fixed(postRefactor.sci_before, 4)} → ${fixed(postRefactor.sci_after, 4)}`} unit="index (0-1)" tone="green" />
-                <Metric label="ESS (Before → After)" metric={`${fixed(postRefactor.ess_before, 2)} → ${fixed(postRefactor.ess_after, 2)}`} unit="out of 10" tone="amber" />
+                <Metric label="ESS (Before → After)" metric={`${fixed(postRefactor.ess_before, 3)} → ${fixed(postRefactor.ess_after, 3)}`} unit="out of 10 · distinct rule types" tone="amber" />
                 <Metric label="Energy Smells (Before → After)" metric={`${postRefactor.smells_before ?? 0} → ${postRefactor.smells_after ?? 0}`} unit={`actionable (conf ≥ 0.5) · burden ${fixed(postRefactor.smell_burden_before, 2)} → ${fixed(postRefactor.smell_burden_after, 2)}`} tone="amber" />
-                <Metric label="Energy (Before → After)" metric={`${fixed(postRefactor.energy_before_joules, 3)} → ${fixed(postRefactor.energy_after_joules, 3)}`} unit="joules" tone="amber" />
-                <Metric label="Research CIRS (Before → After)" metric={`${fixed(postRefactor.cirs_before, 6)} → ${fixed(postRefactor.cirs_after, 6)}`} unit="risk index" tone="ink" />
-                <Metric label="Measured Speedup" metric={postRefactor.measurement_reliability === 'unavailable' ? '—' : postRefactor.measured_reduction_percent !== undefined ? `${fixed(postRefactor.measured_reduction_percent, 1)}%` : '—'} unit={postRefactor.measurement_reliability || 'reliability unavailable'} tone="blue" />
+                <Metric label="Energy (Before → After)" metric={`${fixed(postRefactor.energy_before_joules, 3)} → ${fixed(postRefactor.energy_after_joules, 3)}`} unit="modeled J (relative)" tone="amber" />
+                <Metric label="Risk-weighted score (Before → After)" metric={`${fixed(postRefactor.cirs_before, 6)} → ${fixed(postRefactor.cirs_after, 6)}`} unit="unitless CIRS research score" tone="ink" />
+                <Metric
+                  label="Measured Speedup"
+                  metric={postRefactor.measurement_reliability === 'low_confidence_small_workload'
+                    ? 'Not measurable (workload too small)'
+                    : postRefactor.measurement_reliability === 'disabled'
+                      ? 'Not run'
+                      : postRefactor.measurement_reliability === 'unavailable'
+                        ? '—'
+                        : postRefactor.measured_reduction_percent !== undefined
+                          ? `${fixed(postRefactor.measured_reduction_percent, 1)}%`
+                          : '—'}
+                  unit={postRefactor.measurement_reliability === 'low_confidence_small_workload'
+                    ? ''
+                    : postRefactor.measurement_reliability || 'reliability unavailable'}
+                  tone="blue"
+                />
               </div>
+            )}
+
+            {result.measured_runtime && (
+              <p className="muted-copy" role="note">
+                {result.execution_status === 'not_executed'
+                  ? <>Execution for <strong>{result.filename || filename}</strong>: Not executed (static analysis only).</>
+                  : <>Sandbox execution for <strong>{result.filename || filename}</strong>: original {result.measured_runtime.original?.status || 'unknown'}, generated {result.measured_runtime.optimized?.status || 'unknown'}; hard timeout {result.measured_runtime.hard_timeout_sec ?? '—'}s; network blocked by Python socket controls.</>}
+              </p>
             )}
 
             {singleFileRefactorComparisonData.length > 0 && (
@@ -2087,14 +2217,17 @@ export default function App() {
                 <MetricComparison rows={singleFileRefactorComparisonData} />
               </section>
             )}
+            <CarbonScenarioComparison result={result} currentIntensity={carbonIntensityToDisplay} />
 
             <div className="impact-card">
               <div className="impact-icon"><Sparkles size={24} /></div>
               <div>
                 <p className="overline">NEXT BEST STEP</p>
-                <h3>Apply the safe AST recommendations, then verify with a fresh run.</h3>
+                <h3>{postRefactor.no_modeled_improvement ? 'No modeled improvement' : 'Apply the safe AST recommendations, then verify with a fresh run.'}</h3>
                 <p>
-                  {result.auto_applied_fixes?.length
+                  {postRefactor.no_modeled_improvement
+                    ? 'The generated change was not retained or recommended because modeled energy, CIRS, ESS, SCI, and actionable smell counts must not regress, with energy or CIRS improving.'
+                    : result.auto_applied_fixes?.length
                     ? `${result.auto_applied_fixes.length} safe AST change(s) were generated. Your uploaded source file is not overwritten.`
                     : 'No safe automatic source change was generated for this file. The original remains unchanged; review the manual recommendations.'}
                   {' '}Energy, SCI, ESS, and CIRS are model estimates.{' '}
@@ -2111,7 +2244,8 @@ export default function App() {
                 <div className="panel-head">
                   <div>
                     <p className="overline">FINDINGS RESOLUTION AUDIT</p>
-                    <h3>Resolved Energy Smells ({postRefactor.findings_comparison.filter((f: any) => f.is_resolved).length} of {postRefactor.findings_comparison.length})</h3>
+                    <h3>Distinct rule types resolved: {fixed(postRefactor.resolved_rule_count ?? postRefactor.findings_comparison.filter((f: any) => f.is_resolved).length, 0)}</h3>
+                    <span>{fixed(postRefactor.finding_locations_before, 0)} finding locations before → {fixed(postRefactor.finding_locations_after, 0)} after</span>
                   </div>
                 </div>
                 <div className="project-table-wrap">
@@ -2185,20 +2319,22 @@ export default function App() {
             />
             <Metric
               label="Workload Energy Requirement"
-              metric={analysisMode === 'project' && projectResult ? `${fixed(projectResult.total_energy_joules, 2)} J` : `${fixed(energy.energy_joules, 3)} J`}
-              unit={analysisMode === 'project' && projectResult ? `${fixed(projectResult.total_energy_kwh, 6)} kWh` : `${fixed((energy.energy_joules || 0) / 3600000.0, 8)} kWh`}
+              metric={analysisMode === 'project' && projectResult ? fixed(projectAfterEnergy, 2) : fixed(energy.energy_joules, 3)}
+              unit={analysisMode === 'project' && projectResult ? 'modeled J (relative) · sum across files (one run each)' : 'modeled J (relative) · not metered energy'}
+              help="This is a relative model score, not metered energy. Any kWh-equivalent conversion is an intermediate estimate, not measured consumption."
               tone="green"
             />
             <Metric
               label="Current Grid Intensity"
-              metric={fixed(currentZone?.carbon_intensity ?? forecast?.current_carbon_intensity ?? carbonIntensityToDisplay, 2)}
-              unit="gCO₂eq/kWh"
+              metric={fixed(analysisMode === 'project' && projectResult ? impactCurrentIntensity : (currentZone?.carbon_intensity ?? forecast?.current_carbon_intensity ?? carbonIntensityToDisplay), 2)}
+              unit={`gCO₂eq/kWh · ${carbonSourceZone} · ${carbonSourceType}`}
               tone="amber"
             />
             <Metric
               label="Current Workload Carbon Footprint"
-              metric={analysisMode === 'project' && projectResult ? fixed(projectResult.total_energy_kwh * (currentZone?.carbon_intensity ?? forecast?.current_carbon_intensity ?? carbonIntensityToDisplay), 4) : fixed(((energy.energy_joules || 0) / 3600000.0) * (currentZone?.carbon_intensity ?? forecast?.current_carbon_intensity ?? carbonIntensityToDisplay), 6)}
-              unit="gCO₂eq"
+              metric={analysisMode === 'project' && projectResult ? fixed((projectAfterEnergy / 3600000.0) * impactCurrentIntensity, 6) : fixed(((energy.energy_joules || 0) / 3600000.0) * (currentZone?.carbon_intensity ?? forecast?.current_carbon_intensity ?? carbonIntensityToDisplay), 6)}
+              unit="modeled gCO₂eq/run · unweighted · not metered"
+              help="Estimated from relative model energy, not measured energy."
               tone="ink"
             />
           </div>
@@ -2206,12 +2342,13 @@ export default function App() {
           <ForecastView forecast={forecast} zoneName={currentZone?.display_name || zone} zoneKey={zone} loading={forecastLoading} error={forecastError} />
         </section>
       )}
+      </TabErrorBoundary>
     </main>
   </div>;
 }
 
-function Metric({ label, metric, unit, tone }: { label: string; metric: string; unit: string; tone: string }) {
-  return <article className={`metric ${tone}`}><p>{label}</p><strong>{metric}</strong><span>{unit}</span></article>;
+function Metric({ label, metric, unit, tone, help }: { label: string; metric: string; unit: string; tone: string; help?: string }) {
+  return <article className={`metric ${tone}`}><p>{label}{help && <abbr className="metric-help" title={help} aria-label={help}>ⓘ</abbr>}</p><strong>{metric}</strong><span>{unit}</span></article>;
 }
 function formatWindowTime(isoStr?: string): string {
   if (!isoStr) return '—';
@@ -2267,8 +2404,15 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
     );
   }
 
-  const recTimeStr = formatWindowTime(forecast.recommended_execution_time);
-  const recTimeIso = forecast.recommended_execution_time;
+  const hasCleanerWindow = forecast.has_cleaner_window ?? (forecast.percentage_reduction > 0);
+  const intensityNow = forecast.intensity_now ?? forecast.current_carbon_intensity;
+  const forecastMinimum = forecast.forecast_minimum_intensity ?? forecast.lowest_forecast_intensity;
+  const intensityWindow = forecast.intensity_window ?? Math.min(intensityNow, forecastMinimum);
+  const schedulingReduction = forecast.scheduling_reduction_percent ?? Math.max(0, forecast.percentage_reduction);
+  const recTimeStr = hasCleanerWindow
+    ? formatWindowTime(forecast.window_start || forecast.recommended_execution_time || undefined)
+    : 'No cleaner forecast window · use current schedule';
+  const recTimeIso = forecast.window_start || forecast.recommended_execution_time;
   const nowMs = Date.now();
   const currentPointIndex = hourly.reduce((bestIndex: number, item: any, index: number) => {
     const thisDistance = Math.abs(Date.parse(item.timestamp) - nowMs);
@@ -2299,36 +2443,37 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
             <p className="overline" style={{ color: '#2e6956', fontWeight: 600 }}>RECOMMENDED GREEN WINDOW</p>
             <h2 style={{ fontSize: '24px', margin: '4px 0 0', color: 'var(--ink)' }}>{recTimeStr}</h2>
           </div>
-          <span className="status-badge success" style={{ padding: '6px 12px', fontSize: '13px' }}>
-            <Leaf size={14} style={{ display: 'inline', marginRight: '4px' }} /> Optimal Execution Window
+          <span className={`status-badge ${hasCleanerWindow ? 'success' : ''}`} style={{ padding: '6px 12px', fontSize: '13px' }}>
+            {hasCleanerWindow ? <><Leaf size={14} style={{ display: 'inline', marginRight: '4px' }} /> Optimal Execution Window</> : 'No scheduling reduction'}
           </span>
+          {forecast.source_type !== 'live' && <span className="mock-data-badge">MOCK DATA</span>}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginTop: '16px' }}>
           <div style={{ background: 'var(--bg)', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--line)' }}>
             <p style={{ fontSize: '11px', color: 'var(--muted)', margin: 0 }}>Forecast Grid Intensity</p>
             <strong style={{ fontSize: '20px', color: 'var(--forest)', display: 'block', margin: '4px 0 0' }}>
-              {fixed(forecast.lowest_forecast_intensity, 1)} <small style={{ fontSize: '11px', color: 'var(--muted)' }}>gCO₂eq/kWh</small>
+              {fixed(forecastMinimum, 1)} <small style={{ fontSize: '11px', color: 'var(--muted)' }}>gCO₂eq/kWh</small>
             </strong>
           </div>
 
           <div style={{ background: 'var(--bg)', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--line)' }}>
             <p style={{ fontSize: '11px', color: 'var(--muted)', margin: 0 }}>Current Grid Intensity</p>
             <strong style={{ fontSize: '20px', color: 'var(--ink)', display: 'block', margin: '4px 0 0' }}>
-              {fixed(forecast.current_carbon_intensity, 1)} <small style={{ fontSize: '11px', color: 'var(--muted)' }}>gCO₂eq/kWh</small>
+              {fixed(intensityNow, 1)} <small style={{ fontSize: '11px', color: 'var(--muted)' }}>gCO₂eq/kWh</small>
             </strong>
           </div>
 
           <div style={{ background: 'var(--bg)', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--line)' }}>
             <p style={{ fontSize: '11px', color: 'var(--muted)', margin: 0 }}>Potential Intensity Reduction</p>
             <strong style={{ fontSize: '20px', color: forecast.percentage_reduction > 0 ? 'var(--forest)' : 'var(--ink)', display: 'block', margin: '4px 0 0' }}>
-              {fixed(forecast.percentage_reduction, 1)}%
+              {fixed(schedulingReduction, 1)}%
             </strong>
           </div>
         </div>
 
         <p style={{ fontSize: '12px', color: 'var(--muted)', margin: '14px 0 0' }}>
-          Based on forecast grid carbon intensity for {zoneName} ({zoneKey}).
+          {hasCleanerWindow ? `Best forecast window: ${formatWindowTime(forecast.window_start || forecast.recommended_execution_time || undefined)} · ${fixed(intensityWindow, 1)} gCO₂eq/kWh. ` : `No forecast window is cleaner than the current grid; modeled carbon reduction is 0% and the current intensity is retained. The best forecast hour is ${formatWindowTime(forecast.recommended_execution_time || undefined)} at ${fixed(forecastMinimum, 1)} gCO₂eq/kWh. `}Source: {forecast.source} · {forecast.source_type} · {zoneName} ({zoneKey}).
         </p>
       </section>
 
@@ -2353,7 +2498,7 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
               <Tooltip
                 cursor={{ fill: '#f3f1eb' }}
                 formatter={(val: any, _name: any, item: any) => [
-                  `${val} gCO₂eq/kWh (${fixed(item?.payload?.emissions, 6)} g workload footprint)${item?.payload?.isCurrent ? ' · Current hour' : ''}${item?.payload?.isOptimal ? ' · Recommended hour' : ''}`,
+                  `${val} gCO₂eq/kWh (${fixed(item?.payload?.emissions, 6)} modeled gCO₂eq/run workload footprint)${item?.payload?.isCurrent ? ' · Current hour' : ''}${item?.payload?.isOptimal ? ' · Recommended hour' : ''}`,
                   'Grid Carbon Intensity'
                 ]}
                 labelFormatter={(label: any, items: readonly any[]) => {
@@ -2364,13 +2509,13 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
               {currentPoint && (
                 <ReferenceLine x={currentPoint.time} stroke="#c53030" strokeWidth={2} strokeDasharray="3 3" label={{ value: 'NOW', fill: '#c53030', fontSize: 10, position: 'insideTop' }} />
               )}
-              {forecast.current_carbon_intensity && (
+              {intensityNow && (
                 <ReferenceLine
-                  y={forecast.current_carbon_intensity}
+                  y={intensityNow}
                   stroke="#ef4444"
                   strokeWidth={2}
                   strokeDasharray="4 4"
-                  label={{ value: `Current ${fixed(forecast.current_carbon_intensity, 1)}`, fill: '#c53030', fontSize: 10, position: 'top' }}
+                  label={{ value: `Current ${fixed(intensityNow, 1)}`, fill: '#c53030', fontSize: 10, position: 'top' }}
                 />
               )}
               <Bar dataKey="intensity" name="Grid Intensity" radius={[4, 4, 0, 0]}>

@@ -1,0 +1,3178 @@
+{
+    "fastapi/fastapi": {
+        "target_file": "fastapi/applications.py",
+        "commit_sha": "50113da16fec53b66b80d75e80a89296de4fa5a5",
+        "findings_count": 18,
+        "unique_rule_ids": [
+            "EKB-COMP-003",
+            "EKB-NET-001"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1108",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1160",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1165",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1222",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1361",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1441",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1646",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2019",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2397",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2775",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3148",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3521",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3894",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 4272",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 4662",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-NET-001",
+                "confidence": 0.9,
+                "location": "Line 1109",
+                "message": "Repeated network requests inside loops"
+            },
+            {
+                "rule_id": "EKB-NET-001",
+                "confidence": 0.9,
+                "location": "Line 1124",
+                "message": "Repeated network requests inside loops"
+            },
+            {
+                "rule_id": "EKB-NET-001",
+                "confidence": 0.9,
+                "location": "Line 1152",
+                "message": "Repeated network requests inside loops"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.0,
+        "computed_P_leak": 1.0,
+        "computed_ESS": 10.0,
+        "is_ESS_saturated_at_10": true,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "pallets/flask": {
+        "target_file": "src/flask/app.py",
+        "commit_sha": "d73fa1cdcbd8b1465c151db8924ba58b1dd14e35",
+        "findings_count": 10,
+        "unique_rule_ids": [
+            "EKB-COMP-001",
+            "EKB-COMP-003",
+            "EKB-IO-001"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 616",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 1384",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 1389",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 1415",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 1447",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 311",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-IO-001",
+                "confidence": 0.5,
+                "location": "Line 444",
+                "message": "Repeated file I/O inside loops"
+            },
+            {
+                "rule_id": "EKB-IO-001",
+                "confidence": 0.5,
+                "location": "Line 446",
+                "message": "Repeated file I/O inside loops"
+            },
+            {
+                "rule_id": "EKB-IO-001",
+                "confidence": 0.5,
+                "location": "Line 466",
+                "message": "Repeated file I/O inside loops"
+            },
+            {
+                "rule_id": "EKB-IO-001",
+                "confidence": 0.5,
+                "location": "Line 468",
+                "message": "Repeated file I/O inside loops"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.0,
+        "computed_P_leak": 1.0,
+        "computed_ESS": 10.0,
+        "is_ESS_saturated_at_10": true,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "django/django": {
+        "target_file": "django/core/handlers/base.py",
+        "commit_sha": "dd6f6b1531984823e3dc56740dfa93f3ceb09357",
+        "findings_count": 0,
+        "unique_rule_ids": [],
+        "findings_detail": [],
+        "algebraic_t_conorm_product": 1.0,
+        "computed_P_leak": 0.0,
+        "computed_ESS": 0.0,
+        "is_ESS_saturated_at_10": false,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "psf/requests": {
+        "target_file": "src/requests/api.py",
+        "commit_sha": "dae7ef63b4df6eded86637f251fc4e3a06c3b479",
+        "findings_count": 2,
+        "unique_rule_ids": [
+            "EKB-COMP-003",
+            "EKB-NET-001"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 24",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-NET-001",
+                "confidence": 0.9,
+                "location": "Line 71",
+                "message": "Repeated network requests inside loops"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.005,
+        "computed_P_leak": 0.995,
+        "computed_ESS": 9.95,
+        "is_ESS_saturated_at_10": false,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "encode/httpx": {
+        "target_file": "httpx/_client.py",
+        "commit_sha": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+        "findings_count": 14,
+        "unique_rule_ids": [
+            "EKB-COMP-001",
+            "EKB-COMP-003"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 976",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 981",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 1691",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 1696",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 156",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 179",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 639",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1263",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1275",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1293",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1353",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1978",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1990",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2008",
+                "message": "Recursion misuse on large inputs"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.0,
+        "computed_P_leak": 1.0,
+        "computed_ESS": 10.0,
+        "is_ESS_saturated_at_10": true,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "pandas-dev/pandas": {
+        "target_file": "pandas/core/base.py",
+        "commit_sha": "db853051c2460f2101d887cd594f869b8028bc40",
+        "findings_count": 12,
+        "unique_rule_ids": [
+            "EKB-COMP-003"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 107",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 125",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 158",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 601",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 798",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 873",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 948",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1209",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1396",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1551",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1559",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1566",
+                "message": "Recursion misuse on large inputs"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.0,
+        "computed_P_leak": 1.0,
+        "computed_ESS": 10.0,
+        "is_ESS_saturated_at_10": true,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "scipy/scipy": {
+        "target_file": "scipy/optimize/_minimize.py",
+        "commit_sha": "1d77f67e1a99f86cb41e1e8bea58bd18a88c9172",
+        "findings_count": 0,
+        "unique_rule_ids": [],
+        "findings_detail": [],
+        "algebraic_t_conorm_product": 1.0,
+        "computed_P_leak": 0.0,
+        "computed_ESS": 0.0,
+        "is_ESS_saturated_at_10": false,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "numpy/numpy": {
+        "target_file": "numpy/core/numeric.py",
+        "commit_sha": "79f3a4b5bd0e2dcf762521b993f1142842b0af21",
+        "findings_count": 0,
+        "unique_rule_ids": [],
+        "findings_detail": [],
+        "algebraic_t_conorm_product": 1.0,
+        "computed_P_leak": 0.0,
+        "computed_ESS": 0.0,
+        "is_ESS_saturated_at_10": false,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "mwaskom/seaborn": {
+        "target_file": "seaborn/matrix.py",
+        "commit_sha": "f04b6cd5484267a0885d1fed068e99dff3a1b226",
+        "findings_count": 1,
+        "unique_rule_ids": [
+            "EKB-COMP-001"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 958",
+                "message": "Excessive nested loops"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.1,
+        "computed_P_leak": 0.9,
+        "computed_ESS": 9.0,
+        "is_ESS_saturated_at_10": false,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "pydata/xarray": {
+        "target_file": "xarray/core/dataarray.py",
+        "commit_sha": "8de862c29544c2fb1957ce20985745952bc81de7",
+        "findings_count": 92,
+        "unique_rule_ids": [
+            "EKB-COMP-003"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 255",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 489",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 526",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 914",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 927",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 945",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 948",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1069",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1108",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1116",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1123",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1215",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1218",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1221",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1224",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1228",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1239",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1243",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1255",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1291",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1361",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1456",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1519",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1621",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1718",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1843",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1849",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1892",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1939",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2066",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2101",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2287",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2379",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2540",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2721",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2780",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2882",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2945",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2982",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3011",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3038",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3111",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3241",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3295",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3371",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3396",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3416",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3484",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3535",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3612",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3797",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3881",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3983",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 4191",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 4207",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 4224",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 4241",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 4255",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 4387",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 4408",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 4427",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 4643",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 4784",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 4791",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 4983",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 5097",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 5148",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 5198",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 5270",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 5337",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 5420",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 5539",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 5584",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 5647",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 5701",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 5763",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 5777",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 5885",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 5952",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 6313",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 6323",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 6332",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 6434",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 6444",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 6453",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 6554",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 6633",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 6805",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 6885",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 7008",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 7764",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 7833",
+                "message": "Recursion misuse on large inputs"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.0,
+        "computed_P_leak": 1.0,
+        "computed_ESS": 10.0,
+        "is_ESS_saturated_at_10": true,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "huggingface/transformers": {
+        "target_file": "src/transformers/models/auto/modeling_auto.py",
+        "commit_sha": "21912efc9da1130ab6e5f97bf3ce0e5b7c118f86",
+        "findings_count": 2,
+        "unique_rule_ids": [
+            "EKB-COMP-003"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2242",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2452",
+                "message": "Recursion misuse on large inputs"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.0025,
+        "computed_P_leak": 0.9975,
+        "computed_ESS": 9.975,
+        "is_ESS_saturated_at_10": false,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "ultralytics/ultralytics": {
+        "target_file": "ultralytics/engine/model.py",
+        "commit_sha": "cf0fb4795ac5943de855a249a72a6375b6000ed8",
+        "findings_count": 11,
+        "unique_rule_ids": [
+            "EKB-COMP-002",
+            "EKB-COMP-003",
+            "EKB-MEM-001"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 83",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 317",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 349",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 392",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 415",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 682",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 794",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 947",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1199",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-002",
+                "confidence": 0.78,
+                "location": "Line 312",
+                "message": "Redundant computation"
+            },
+            {
+                "rule_id": "EKB-MEM-001",
+                "confidence": 0.76,
+                "location": "Line 1121",
+                "message": "Excessive temporary allocation in loops"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.0,
+        "computed_P_leak": 1.0,
+        "computed_ESS": 10.0,
+        "is_ESS_saturated_at_10": true,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "huggingface/diffusers": {
+        "target_file": "src/diffusers/pipelines/pipeline_utils.py",
+        "commit_sha": "93d88c18985697a5b8ac823d139541311d45044f",
+        "findings_count": 22,
+        "unique_rule_ids": [
+            "EKB-COMP-001",
+            "EKB-COMP-002",
+            "EKB-COMP-003",
+            "EKB-MEM-001"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 327",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 335",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 1156",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 182",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 239",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 397",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 601",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1359",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1501",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1962",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2028",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2032",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2091",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2266",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2288",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2292",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2319",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-002",
+                "confidence": 0.78,
+                "location": "Line 325",
+                "message": "Redundant computation"
+            },
+            {
+                "rule_id": "EKB-COMP-002",
+                "confidence": 0.78,
+                "location": "Line 1027",
+                "message": "Redundant computation"
+            },
+            {
+                "rule_id": "EKB-COMP-002",
+                "confidence": 0.78,
+                "location": "Line 1028",
+                "message": "Redundant computation"
+            },
+            {
+                "rule_id": "EKB-MEM-001",
+                "confidence": 0.76,
+                "location": "Line 362",
+                "message": "Excessive temporary allocation in loops"
+            },
+            {
+                "rule_id": "EKB-MEM-001",
+                "confidence": 0.76,
+                "location": "Line 1806",
+                "message": "Excessive temporary allocation in loops"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.0,
+        "computed_P_leak": 1.0,
+        "computed_ESS": 10.0,
+        "is_ESS_saturated_at_10": true,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "scikit-learn/scikit-learn": {
+        "target_file": "sklearn/base.py",
+        "commit_sha": "a5046923f202f84cc1617f4ea555431194c52836",
+        "findings_count": 13,
+        "unique_rule_ids": [
+            "EKB-COMP-003"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 209",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 248",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 400",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 499",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 521",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 595",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 665",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 738",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 908",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1089",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1136",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1228",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1237",
+                "message": "Recursion misuse on large inputs"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.0,
+        "computed_P_leak": 1.0,
+        "computed_ESS": 10.0,
+        "is_ESS_saturated_at_10": true,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "pytorch/vision": {
+        "target_file": "torchvision/models/resnet.py",
+        "commit_sha": "7b0e250acf82aac5a2389f54c6855da17bfeace9",
+        "findings_count": 3,
+        "unique_rule_ids": [
+            "EKB-COMP-003"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 62",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 117",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 167",
+                "message": "Recursion misuse on large inputs"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.000125,
+        "computed_P_leak": 0.999875,
+        "computed_ESS": 9.9987,
+        "is_ESS_saturated_at_10": false,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "psf/black": {
+        "target_file": "src/black/__init__.py",
+        "commit_sha": "acd6198877ced2d8126b9b3958bb17f4a65ef0d1",
+        "findings_count": 7,
+        "unique_rule_ids": [
+            "EKB-COMP-001",
+            "EKB-COMP-003",
+            "EKB-IO-001"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 1322",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 1459",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 1464",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1563",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1593",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-IO-001",
+                "confidence": 0.5,
+                "location": "Line 993",
+                "message": "Repeated file I/O inside loops"
+            },
+            {
+                "rule_id": "EKB-IO-001",
+                "confidence": 0.5,
+                "location": "Line 1011",
+                "message": "Repeated file I/O inside loops"
+            }
+        ],
+        "algebraic_t_conorm_product": 1e-06,
+        "computed_P_leak": 0.999999,
+        "computed_ESS": 10.0,
+        "is_ESS_saturated_at_10": true,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "pypa/pip": {
+        "target_file": "src/pip/_internal/cli/main.py",
+        "commit_sha": "892d13b34a20b3244a05d90622bbb5bf8e7ccf46",
+        "findings_count": 1,
+        "unique_rule_ids": [
+            "EKB-COMP-003"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 41",
+                "message": "Recursion misuse on large inputs"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.05,
+        "computed_P_leak": 0.95,
+        "computed_ESS": 9.5,
+        "is_ESS_saturated_at_10": false,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "cookiecutter/cookiecutter": {
+        "target_file": "cookiecutter/main.py",
+        "commit_sha": "c88fbe921c97c58b65f1883ba90a0ab53cc91b34",
+        "findings_count": 1,
+        "unique_rule_ids": [
+            "EKB-COMP-003"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 29",
+                "message": "Recursion misuse on large inputs"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.05,
+        "computed_P_leak": 0.95,
+        "computed_ESS": 9.5,
+        "is_ESS_saturated_at_10": false,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "tiangolo/typer": {
+        "target_file": "typer/main.py",
+        "commit_sha": "a80f6e5ecd74f32b983cca336a2f3cba98d9853a",
+        "findings_count": 5,
+        "unique_rule_ids": [
+            "EKB-COMP-001",
+            "EKB-COMP-002",
+            "EKB-COMP-003",
+            "EKB-IO-001"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 1319",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1283",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1943",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-002",
+                "confidence": 0.78,
+                "location": "Line 1510",
+                "message": "Redundant computation"
+            },
+            {
+                "rule_id": "EKB-IO-001",
+                "confidence": 0.5,
+                "location": "Line 2017",
+                "message": "Repeated file I/O inside loops"
+            }
+        ],
+        "algebraic_t_conorm_product": 2.8e-05,
+        "computed_P_leak": 0.999973,
+        "computed_ESS": 9.9997,
+        "is_ESS_saturated_at_10": true,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "textualize/rich": {
+        "target_file": "rich/console.py",
+        "commit_sha": "9d8f9a372cc5916fd4781fec207ced7ddac2f08f",
+        "findings_count": 17,
+        "unique_rule_ids": [
+            "EKB-COMP-001",
+            "EKB-COMP-002",
+            "EKB-COMP-003",
+            "EKB-IO-001"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 1736",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 2488",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 147",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 566",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 881",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 892",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1092",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1146",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1190",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1294",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1470",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2156",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-002",
+                "confidence": 0.78,
+                "location": "Line 2487",
+                "message": "Redundant computation"
+            },
+            {
+                "rule_id": "EKB-IO-001",
+                "confidence": 0.5,
+                "location": "Line 2040",
+                "message": "Repeated file I/O inside loops"
+            },
+            {
+                "rule_id": "EKB-IO-001",
+                "confidence": 0.5,
+                "location": "Line 2241",
+                "message": "Repeated file I/O inside loops"
+            },
+            {
+                "rule_id": "EKB-IO-001",
+                "confidence": 0.5,
+                "location": "Line 2349",
+                "message": "Repeated file I/O inside loops"
+            },
+            {
+                "rule_id": "EKB-IO-001",
+                "confidence": 0.5,
+                "location": "Line 2641",
+                "message": "Repeated file I/O inside loops"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.0,
+        "computed_P_leak": 1.0,
+        "computed_ESS": 10.0,
+        "is_ESS_saturated_at_10": true,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "sympy/sympy": {
+        "target_file": "sympy/core/basic.py",
+        "commit_sha": "b8bc7724304a61606eccc5aabe88ee24df881d18",
+        "findings_count": 18,
+        "unique_rule_ids": [
+            "EKB-COMP-001",
+            "EKB-COMP-003"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 818",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 220",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 294",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 315",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 372",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 454",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 823",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1183",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1372",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1772",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1894",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2002",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2007",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2033",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2038",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2173",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2215",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2345",
+                "message": "Recursion misuse on large inputs"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.0,
+        "computed_P_leak": 1.0,
+        "computed_ESS": 10.0,
+        "is_ESS_saturated_at_10": true,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "astropy/astropy": {
+        "target_file": "astropy/units/core.py",
+        "commit_sha": "08d564fe9178a1eef9ebd03ddee7753d1588918b",
+        "findings_count": 40,
+        "unique_rule_ids": [
+            "EKB-COMP-001",
+            "EKB-COMP-002",
+            "EKB-COMP-003",
+            "EKB-MEM-001"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 754",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 761",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 797",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 1193",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 1340",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 1348",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 2502",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 2642",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 2646",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 2655",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 2658",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 2662",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 147",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 217",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 424",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 453",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 565",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 707",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1300",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1319",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1372",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1391",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1415",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1434",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1490",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1553",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1618",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1652",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1676",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1711",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2065",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2303",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2314",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2317",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2448",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-002",
+                "confidence": 0.78,
+                "location": "Line 1349",
+                "message": "Redundant computation"
+            },
+            {
+                "rule_id": "EKB-COMP-002",
+                "confidence": 0.78,
+                "location": "Line 1908",
+                "message": "Redundant computation"
+            },
+            {
+                "rule_id": "EKB-MEM-001",
+                "confidence": 0.76,
+                "location": "Line 1086",
+                "message": "Excessive temporary allocation in loops"
+            },
+            {
+                "rule_id": "EKB-MEM-001",
+                "confidence": 0.76,
+                "location": "Line 2640",
+                "message": "Excessive temporary allocation in loops"
+            },
+            {
+                "rule_id": "EKB-MEM-001",
+                "confidence": 0.76,
+                "location": "Line 2641",
+                "message": "Excessive temporary allocation in loops"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.0,
+        "computed_P_leak": 1.0,
+        "computed_ESS": 10.0,
+        "is_ESS_saturated_at_10": true,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "networkx/networkx": {
+        "target_file": "networkx/algorithms/shortest_paths/generic.py",
+        "commit_sha": "bd45cfe38f6e4eb3aac1aca073acad24285b87de",
+        "findings_count": 3,
+        "unique_rule_ids": [
+            "EKB-COMP-001",
+            "EKB-COMP-002",
+            "EKB-MEM-001"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 710",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-002",
+                "confidence": 0.78,
+                "location": "Line 707",
+                "message": "Redundant computation"
+            },
+            {
+                "rule_id": "EKB-MEM-001",
+                "confidence": 0.76,
+                "location": "Line 160",
+                "message": "Excessive temporary allocation in loops"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.00528,
+        "computed_P_leak": 0.99472,
+        "computed_ESS": 9.9472,
+        "is_ESS_saturated_at_10": false,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "biopython/biopython": {
+        "target_file": "Bio/Seq.py",
+        "commit_sha": "59853389c49d02de6aee14e0db8ef2f2604e280c",
+        "findings_count": 72,
+        "unique_rule_ids": [
+            "EKB-COMP-001",
+            "EKB-COMP-003"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 998",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 1000",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 2606",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 146",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 149",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 157",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 165",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 176",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 187",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 198",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 209",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 218",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 227",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 240",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 255",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 262",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 269",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 276",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 289",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 302",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 306",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 310",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 317",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 324",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 328",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 491",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 560",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 628",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 774",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 815",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 856",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 910",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1005",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1036",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1067",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1110",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1153",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1207",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1262",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1317",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1359",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1402",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1454",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1506",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1513",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1520",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1620",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1668",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1715",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1763",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1811",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1865",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1913",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1951",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2253",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2265",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2299",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2318",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2325",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2364",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2473",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2616",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2621",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2642",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2655",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2689",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2713",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2912",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3016",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3081",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3146",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3210",
+                "message": "Recursion misuse on large inputs"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.0,
+        "computed_P_leak": 1.0,
+        "computed_ESS": 10.0,
+        "is_ESS_saturated_at_10": true,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "scikit-image/scikit-image": {
+        "target_file": "src/skimage/_shared/utils.py",
+        "commit_sha": "9311ab50b2e3392bb5272253b43cb4dd1ce04e31",
+        "findings_count": 0,
+        "unique_rule_ids": [],
+        "findings_detail": [],
+        "algebraic_t_conorm_product": 1.0,
+        "computed_P_leak": 0.0,
+        "computed_ESS": 0.0,
+        "is_ESS_saturated_at_10": false,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "tqdm/tqdm": {
+        "target_file": "tqdm/std.py",
+        "commit_sha": "9cf5a12b1f955468a17f0ba3c59092b23e4258ac",
+        "findings_count": 5,
+        "unique_rule_ids": [
+            "EKB-COMP-003"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 45",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 100",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 104",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 664",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 718",
+                "message": "Recursion misuse on large inputs"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.0,
+        "computed_P_leak": 1.0,
+        "computed_ESS": 10.0,
+        "is_ESS_saturated_at_10": true,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "pydantic/pydantic": {
+        "target_file": "pydantic/main.py",
+        "commit_sha": "915896d163835a57fd7987180087409a3229bd71",
+        "findings_count": 8,
+        "unique_rule_ids": [
+            "EKB-COMP-001",
+            "EKB-COMP-003"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 372",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 607",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1170",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1574",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1709",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1723",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1738",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1752",
+                "message": "Recursion misuse on large inputs"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.0,
+        "computed_P_leak": 1.0,
+        "computed_ESS": 10.0,
+        "is_ESS_saturated_at_10": true,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "python-pillow/Pillow": {
+        "target_file": "src/PIL/Image.py",
+        "commit_sha": "d13f2880161689a05d9121edf0ddf8cbe116245a",
+        "findings_count": 52,
+        "unique_rule_ids": [
+            "EKB-COMP-001",
+            "EKB-COMP-002",
+            "EKB-COMP-003",
+            "EKB-IO-001"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 191",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 4018",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 703",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 822",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 826",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 930",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1019",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1275",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1358",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1442",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1478",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1497",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1564",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1608",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1692",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1760",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1775",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1787",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1820",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1848",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1940",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1996",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2111",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2175",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2328",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2438",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2750",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2774",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 2915",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3103",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3117",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3126",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3135",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3199",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3247",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3523",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3533",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3591",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3728",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3742",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3798",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3956",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3971",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3982",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 3991",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 4130",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 4199",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 4223",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-002",
+                "confidence": 0.78,
+                "location": "Line 4017",
+                "message": "Redundant computation"
+            },
+            {
+                "rule_id": "EKB-IO-001",
+                "confidence": 0.5,
+                "location": "Line 2701",
+                "message": "Repeated file I/O inside loops"
+            },
+            {
+                "rule_id": "EKB-IO-001",
+                "confidence": 0.5,
+                "location": "Line 2703",
+                "message": "Repeated file I/O inside loops"
+            },
+            {
+                "rule_id": "EKB-IO-001",
+                "confidence": 0.5,
+                "location": "Line 3645",
+                "message": "Repeated file I/O inside loops"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.0,
+        "computed_P_leak": 1.0,
+        "computed_ESS": 10.0,
+        "is_ESS_saturated_at_10": true,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "pytest-dev/pytest": {
+        "target_file": "src/_pytest/config/__init__.py",
+        "commit_sha": "6a9ba0f02f827a54cff6ab4da0dddecd65444ff6",
+        "findings_count": 10,
+        "unique_rule_ids": [
+            "EKB-COMP-002",
+            "EKB-COMP-003",
+            "EKB-IO-001"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 500",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 552",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 579",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 591",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 964",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1009",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1631",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-002",
+                "confidence": 0.78,
+                "location": "Line 847",
+                "message": "Redundant computation"
+            },
+            {
+                "rule_id": "EKB-IO-001",
+                "confidence": 0.5,
+                "location": "Line 290",
+                "message": "Repeated file I/O inside loops"
+            },
+            {
+                "rule_id": "EKB-IO-001",
+                "confidence": 0.5,
+                "location": "Line 536",
+                "message": "Repeated file I/O inside loops"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.0,
+        "computed_P_leak": 1.0,
+        "computed_ESS": 10.0,
+        "is_ESS_saturated_at_10": true,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    },
+    "joblib/joblib": {
+        "target_file": "joblib/parallel.py",
+        "commit_sha": "02170e34adb139126c0b82b1427ceea12c68621a",
+        "findings_count": 7,
+        "unique_rule_ids": [
+            "EKB-COMP-001",
+            "EKB-COMP-003"
+        ],
+        "findings_detail": [
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 1768",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-001",
+                "confidence": 0.9,
+                "location": "Line 1868",
+                "message": "Excessive nested loops"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 548",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 631",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 949",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1234",
+                "message": "Recursion misuse on large inputs"
+            },
+            {
+                "rule_id": "EKB-COMP-003",
+                "confidence": 0.95,
+                "location": "Line 1398",
+                "message": "Recursion misuse on large inputs"
+            }
+        ],
+        "algebraic_t_conorm_product": 0.0,
+        "computed_P_leak": 1.0,
+        "computed_ESS": 10.0,
+        "is_ESS_saturated_at_10": true,
+        "production_method": "sustainability.metrics.ResearchSustainabilityMetrics.compute_energy_smell_score",
+        "saturation_explanation": "ESS saturates to 10.0 because the Algebraic T-Conorm operator P_leak = 1 - PROD(1 - c_f) combines fuzzy probabilities. Multiple or high-confidence smell detections yield P_leak -> 1.0, which scales to ESS = 10.0."
+    }
+}

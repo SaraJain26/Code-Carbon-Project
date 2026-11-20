@@ -79,17 +79,67 @@ class TestSustainabilityMath(unittest.TestCase):
         ess_empty = ResearchSustainabilityMetrics.compute_energy_smell_score(report_empty)
         self.assertEqual(ess_empty, 0.0)
 
-        # 2. Maximum confidence boundary: ESS must be exactly 10.0
+        # 2. Confidence is capped at 0.9, so one perfect-confidence finding
+        # contributes ESS=9.0 rather than saturating the fuzzy union at 10.
         finding_max = self._create_finding("EKB-COMP-001", 1.0)
         report_max = EnergySmellReport.from_findings([finding_max], "0.1.0")
         ess_max = ResearchSustainabilityMetrics.compute_energy_smell_score(report_max)
-        self.assertEqual(ess_max, 10.0)
+        self.assertEqual(ess_max, 9.0)
+
+        # Multiple high-confidence findings are capped individually before
+        # the algebraic fuzzy union is calculated.
+        finding_high = self._create_finding("EKB-COMP-002", 0.95)
+        report_high = EnergySmellReport.from_findings([finding_max, finding_high], "0.1.0")
+        ess_high = ResearchSustainabilityMetrics.compute_energy_smell_score(report_high)
+        self.assertAlmostEqual(ess_high, 9.9)
+        # Removing one finding must move ESS even when another high-confidence
+        # smell remains; individual caps prevent saturation at 10.
+        self.assertNotEqual(ess_high, ess_max)
+        self.assertEqual(
+            ResearchSustainabilityMetrics.compute_energy_smell_score(
+                EnergySmellReport.from_findings([finding_max], "0.1.0")
+            ),
+            9.0,
+        )
 
         # 3. Floating-point clamp behavior: confidence in [0, 1]
         finding_half = self._create_finding("EKB-COMP-001", 0.5)
         report_half = EnergySmellReport.from_findings([finding_half], "0.1.0")
         ess_half = ResearchSustainabilityMetrics.compute_energy_smell_score(report_half)
         self.assertEqual(ess_half, 5.0)
+
+    def test_ess_changes_when_one_of_multiple_smells_is_removed(self):
+        first = self._create_finding("EKB-COMP-001", 1.0)
+        second = self._create_finding("EKB-COMP-002", 0.95)
+        with_both = ResearchSustainabilityMetrics.compute_energy_smell_score(
+            EnergySmellReport.from_findings([first, second], "0.1.0")
+        )
+        with_one = ResearchSustainabilityMetrics.compute_energy_smell_score(
+            EnergySmellReport.from_findings([first], "0.1.0")
+        )
+        self.assertAlmostEqual(with_both, 9.9)
+        self.assertEqual(with_one, 9.0)
+        self.assertGreater(with_both, with_one)
+
+    def test_ess_counts_repeated_rule_once_but_counts_distinct_rules(self):
+        repeated = [self._create_finding("EKB-COMP-001", 0.9) for _ in range(5)]
+        repeated_ess = ResearchSustainabilityMetrics.compute_energy_smell_score(
+            EnergySmellReport.from_findings(repeated, "0.1.0")
+        )
+        distinct = [
+            self._create_finding(f"EKB-TEST-{index}", 0.9)
+            for index in range(5)
+        ]
+        distinct_ess = ResearchSustainabilityMetrics.compute_energy_smell_score(
+            EnergySmellReport.from_findings(distinct, "0.1.0")
+        )
+        distinct_after_one_removed = ResearchSustainabilityMetrics.compute_energy_smell_score(
+            EnergySmellReport.from_findings(distinct[:-1], "0.1.0")
+        )
+        self.assertEqual(repeated_ess, 9.0)
+        self.assertAlmostEqual(distinct_ess, 9.9999)
+        self.assertAlmostEqual(distinct_after_one_removed, 9.999)
+        self.assertGreater(distinct_ess, distinct_after_one_removed)
 
     def test_boundary_conditions_cirs(self):
         # 1. Zero hazard boundary (Energy = 0.0) -> CIRS = 0.0

@@ -1,0 +1,8 @@
+{
+  "no_smells.py": {"smell_count": 0, "changes": false, "energy_direction": "same"},
+  "one_loop_invariant_call.py": {"smell_count": 1, "changes": true, "energy_direction": "lower"},
+  "nested_depth_2.py": {"smell_count": 1, "changes": false, "energy_direction": "same"},
+  "two_smells.py": {"smell_count": 2, "changes": false, "energy_direction": "same"},
+  "recursive_function.py": {"smell_count": 1, "changes": false, "energy_direction": "same"},
+  "cannot_fix.py": {"smell_count": 2, "changes": false, "energy_direction": "same"}
+}

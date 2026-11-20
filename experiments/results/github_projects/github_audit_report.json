@@ -1,0 +1,15 @@
+{
+    "audit_timestamp": "2026-11-10T15:47:57Z",
+    "total_repositories_audited": 30,
+    "pinned_to_real_commits": true,
+    "successful_static_analyses": 30,
+    "failed_static_analyses": 0,
+    "total_genuine_loc_analyzed": 47406,
+    "mean_genuine_loc_per_file": 1580.2,
+    "executable_cli_suites_count": 8,
+    "library_frameworks_count": 22,
+    "mean_SCI": 0.5297,
+    "mean_CIRS": 0.6662,
+    "audit_conclusion": "All 30 repositories were successfully verified and pinned to 100% genuine GitHub commit SHAs. Genuine source code files were downloaded and static metrics extracted cleanly. 8 repositories contain standalone executable CLI entrypoints, while 22 repositories are pure library/framework modules requiring dedicated test runners or host applications. Static analysis times (avg ~3.5s per file) are strictly isolated from runtime observations. Empirical formula regression calibration must be performed exclusively on verified empirical runtime energy datasets.",
+    "mean_ESS": 8.3314
+}

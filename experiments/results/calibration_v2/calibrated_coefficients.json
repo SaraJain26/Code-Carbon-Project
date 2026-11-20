@@ -1,0 +1,57 @@
+{
+  "experiment": "Calibration V2 Controlled Benchmark Regression",
+  "baseline_power_watts": 55.0,
+  "n_benchmarks": 30,
+  "n_runs_total": 150,
+  "sci_regression": {
+    "intercept": 112.0013,
+    "beta_CC": -79.1455,
+    "beta_ND": -13.0663,
+    "beta_FD": -18.9707,
+    "se": [
+      20.6694,
+      70.5458,
+      30.0133,
+      23.6214
+    ],
+    "p_values": [
+      0.0,
+      0.2722,
+      0.6669,
+      0.4292
+    ],
+    "ci_95_lower": [
+      69.5148,
+      -224.1545,
+      -74.7595,
+      -67.5252
+    ],
+    "ci_95_upper": [
+      154.4878,
+      65.8635,
+      48.6269,
+      29.5838
+    ],
+    "r2": 0.0727,
+    "adj_r2": -0.0343,
+    "mae": 11.9115,
+    "rmse": 21.1973
+  },
+  "sci_normalized_contribution_weights": {
+    "w_CC": 0.7119,
+    "w_ND": 0.1175,
+    "w_FD": 0.1706
+  },
+  "cirs_calibration": {
+    "w_SCI": 1.0,
+    "w_ESS": 0.0,
+    "pearson_r2": 0.0565
+  },
+  "cross_validation_mean": {
+    "test_MAE": 13.9303,
+    "test_RMSE": 20.574,
+    "test_R2": -1.2046,
+    "test_Pearson_r": 0.1014,
+    "test_Spearman_rho": 0.2914
+  }
+}

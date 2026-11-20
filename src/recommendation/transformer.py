@@ -44,6 +44,23 @@ class _LoopInvariantHoister(ast.NodeTransformer):
     2. Loop-invariant variable assignments (EKB-COMP-002)
     3. Invariant temporary allocations (EKB-MEM-001)
     """
+    PURE_BUILTINS = {"abs", "all", "any", "bool", "float", "int", "len", "max", "min", "sum", "tuple"}
+
+    @classmethod
+    def _safe_builtin_call(cls, call: ast.Call) -> bool:
+        """Only hoist calls whose literal arguments are known not to raise."""
+        if not isinstance(call.func, ast.Name) or call.func.id not in cls.PURE_BUILTINS:
+            return False
+        if call.func.id == "sum" and len(call.args) == 1 and isinstance(call.args[0], ast.Tuple):
+            return all(isinstance(v, ast.Constant) and isinstance(v.value, (int, float, complex, bool)) for v in call.args[0].elts)
+        if call.func.id == "len" and len(call.args) == 1 and isinstance(call.args[0], (ast.Tuple, ast.List, ast.Constant)):
+            return True
+        if call.func.id == "abs" and len(call.args) == 1 and isinstance(call.args[0], ast.Constant) and isinstance(call.args[0].value, (int, float, complex, bool)):
+            return True
+        if call.func.id in {"min", "max"} and len(call.args) == 1 and isinstance(call.args[0], (ast.Tuple, ast.List)):
+            values = call.args[0].elts
+            return bool(values) and all(isinstance(v, ast.Constant) and isinstance(v.value, (int, float)) for v in values)
+        return False
 
     def __init__(self, source_code: str = "") -> None:
         super().__init__()
@@ -86,14 +103,15 @@ class _LoopInvariantHoister(ast.NodeTransformer):
                     for name_node in ast.walk(target):
                         if isinstance(name_node, ast.Name):
                             loop_vars.add(name_node.id)
-        # A call can mutate any object passed to it or reachable from it. In
-        # loops containing calls, conservatively reject hoisting expressions
-        # that depend on names from the loop.
-        if any(isinstance(node, ast.Call) for node in ast.walk(loop_node)):
-            loop_vars.update(
-                node.id for node in ast.walk(loop_node)
-                if isinstance(node, ast.Name)
-            )
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in {"append", "extend", "insert", "pop", "remove", "clear", "update", "add", "discard"}
+                and isinstance(node.func.value, ast.Name)
+            ):
+                # Mark the receiver as mutable so e.g. len(values) is not
+                # hoisted above a loop that appends to values.
+                loop_vars.add(node.func.value.id)
         return loop_vars
 
     def _is_expression_invariant(self, expr: ast.AST, loop_vars: set[str]) -> bool:
@@ -105,7 +123,10 @@ class _LoopInvariantHoister(ast.NodeTransformer):
                 return False
             # Calls, attribute reads, and subscripts may have side effects or
             # return different values between iterations. Keep them in place.
-            if isinstance(node, (ast.Call, ast.Attribute, ast.Subscript)):
+            if isinstance(node, ast.Call):
+                if not self._safe_builtin_call(node):
+                    return False
+            if isinstance(node, (ast.Attribute, ast.Subscript)):
                 return False
         return True
 
@@ -293,12 +314,7 @@ class ASTCodeTransformer:
                         "is_auto_applied": False,
                     }
                 ],
-                estimated_impact={
-                    "ess_reduction_percent": 0.0,
-                    "cirs_reduction_percent": 0.0,
-                    "energy_saving_percent": 0.0,
-                    "carbon_saving_percent": 0.0,
-                },
+                estimated_impact={},
             )
 
         hoister = _LoopInvariantHoister(code)
@@ -370,30 +386,9 @@ class ASTCodeTransformer:
                         }
                     )
 
-        # Calculate modeled impact projections
-        auto_count = len(auto_applied)
-        manual_count = len(manual_fixes)
-        total_findings = auto_count + manual_count
-
-        if total_findings > 0:
-            # Modeled projection assumption: each auto-fix reduces estimated energy/carbon by ~15-25%
-            # and reduces ESS proportionally
-            ess_red = min(85.0, (auto_count / total_findings) * 60.0 + (auto_count * 10.0))
-            cirs_red = min(85.0, (auto_count / total_findings) * 55.0 + (auto_count * 8.0))
-            energy_red = min(75.0, auto_count * 15.0)
-            carbon_red = min(75.0, auto_count * 15.0)
-        else:
-            ess_red = 0.0
-            cirs_red = 0.0
-            energy_red = 0.0
-            carbon_red = 0.0
-
-        estimated_impact = {
-            "ess_reduction_percent": round(ess_red, 1),
-            "cirs_reduction_percent": round(cirs_red, 1),
-            "energy_saving_percent": round(energy_red, 1),
-            "carbon_saving_percent": round(carbon_red, 1),
-        }
+        # Impact is recalculated by the analysis pipeline; avoid fixed savings
+        # percentages that can contradict those model outputs.
+        estimated_impact: dict[str, Any] = {}
 
         return TransformResult(
             original_code=code,

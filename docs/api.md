@@ -97,6 +97,12 @@ report = engine.generate(
 )
 ```
 
+### Three-row footprint comparison
+
+The `/analyze` response fields `carbon_before`, `carbon_after_now`, and `carbon_after_green` are **unweighted modeled gCO₂eq/run**, each computed as `energy_joules / 3_600_000 * carbon_intensity`. `code_only_pct`, `schedule_only_pct`, and `total_pct` are reductions computed from those same three values. The separate `cirs_before` and `cirs_after` fields are unitless risk-weighted CIRS research scores.
+
+Uploaded-code execution is disabled by default. See [runtime execution policy](runtime_execution.md) before opting in with `ENABLE_EXECUTION=true`.
+
 ---
 
 ## Sustainability Metrics API (ESS & CIRS)

@@ -40,11 +40,13 @@ class EnergyEstimationEngine:
         self,
         complexity: ComplexityScore,
         hardware: HardwareScore,
+        loop_ops: float = 0.0,
     ) -> EnergyResult:
 
         runtime = self._runtime_estimator.estimate(
             complexity,
             hardware,
+            loop_ops,
         )
 
         energy = self._energy_estimator.estimate(

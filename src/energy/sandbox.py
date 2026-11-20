@@ -86,6 +86,34 @@ class SandboxedRuntimeExecutor:
 import sys
 import time
 import tracemalloc
+import socket
+
+def _block_network(event, args):
+    blocked = {
+        "socket.__new__", "socket.getaddrinfo", "socket.gethostbyname",
+        "socket.gethostbyname_ex", "socket.gethostbyaddr", "socket.getnameinfo",
+        "socket.connect", "socket.connect_ex", "socket.bind", "socket.listen", "socket.sendto",
+        "subprocess.Popen", "os.system", "os.exec", "os.spawn",
+    }
+    if event in blocked:
+        raise PermissionError("Network access is blocked in the sandbox.")
+
+sys.addaudithook(_block_network)
+def _blocked_socket_operation(*args, **kwargs):
+    raise PermissionError("Network access is blocked in the sandbox.")
+
+socket.create_connection = _blocked_socket_operation
+socket.getaddrinfo = _blocked_socket_operation
+socket.gethostbyname = _blocked_socket_operation
+socket.gethostbyname_ex = _blocked_socket_operation
+socket.gethostbyaddr = _blocked_socket_operation
+socket.getnameinfo = _blocked_socket_operation
+
+def _block_process_spawn(event, args):
+    if event in {"subprocess.Popen", "os.system", "os.exec", "os.spawn"}:
+        raise PermissionError("Child process creation is blocked in the sandbox.")
+
+sys.addaudithook(_block_process_spawn)
 
 tracemalloc.start()
 t0_wall = time.perf_counter_ns()
@@ -205,6 +233,8 @@ print(f"RESULT|{{wall_ms:.4f}}|{{cpu_ms:.4f}}|{{mem_kb:.2f}}|{{status}}|{{err_ms
         if not is_sandbox_enabled():
             return {
                 "is_sandboxed": False,
+                "hard_timeout_sec": self.timeout_sec,
+                "network_access": "blocked via Python socket audit hook",
                 "timeout_sec": self.timeout_sec,
                 "hardware_sensor_active": False,
                 "energy_method": "Execution Disabled",
@@ -279,6 +309,8 @@ print(f"RESULT|{{wall_ms:.4f}}|{{cpu_ms:.4f}}|{{mem_kb:.2f}}|{{status}}|{{err_ms
 
         return {
             "is_sandboxed": True,
+            "hard_timeout_sec": self.timeout_sec,
+            "network_access": "blocked via Python socket audit hook",
             "timeout_sec": self.timeout_sec,
             "hardware_sensor_active": hardware_active,
             "energy_method": "Hardware RAPL Sensor" if hardware_active else "Empirical Runtime × 55W Reference Power",

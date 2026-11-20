@@ -43,14 +43,14 @@ def _count_code_lines(source: str) -> int:
 class StaticAnalysisEngine:
     """Coordinates focused static analysis passes over Python source code."""
 
-    def analyze_file(self, source_file: str | Path) -> AnalysisResult:
+    def analyze_file(self, source_file: str | Path, *, parsed_tree: ast.AST | None = None) -> AnalysisResult:
         path = Path(source_file)
         source = path.read_text(encoding="utf-8")
-        return self.analyze_source(source, path)
+        return self.analyze_source(source, path, parsed_tree=parsed_tree)
 
-    def analyze_source(self, source: str, source_file: str | Path = "<memory>") -> AnalysisResult:
+    def analyze_source(self, source: str, source_file: str | Path = "<memory>", *, parsed_tree: ast.AST | None = None) -> AnalysisResult:
         path = Path(source_file)
-        tree = ast.parse(source, filename=str(path), type_comments=True)
+        tree = parsed_tree or ast.parse(source, filename=str(path), type_comments=True)
         module = ModuleInfo(
             source_file=path,
             name=path.stem,

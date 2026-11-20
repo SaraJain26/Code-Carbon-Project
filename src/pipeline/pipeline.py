@@ -28,6 +28,7 @@ from hardware_profile import HardwareProfilingEngine
 from hardware_profile.models import HardwareProfile, HardwareScore
 
 from energy import EnergyEstimationEngine
+from energy.loop_ops import loop_weighted_ops
 from energy.models import EnergyResult 
 
 from carbon import (
@@ -98,11 +99,9 @@ class PredictivePipeline:
     def _analysis(
         self,
         source_file: str | Path,
+        parsed_tree=None,
     ) -> AnalysisResult:
-
-        return self._analysis_engine.analyze_file(
-            source_file,
-        )
+        return self._analysis_engine.analyze_file(source_file, parsed_tree=parsed_tree)
 
 
     def _detect(
@@ -127,10 +126,12 @@ class PredictivePipeline:
         *,
         zone: str,
         use_global_average: bool = False,
+        parsed_tree=None,
     ) -> dict[str, object]:
 
         analysis_result = self._analysis(
             source_file,
+            parsed_tree=parsed_tree,
         )
 
         smell_report = self._detect(
@@ -166,6 +167,7 @@ class PredictivePipeline:
             self._energy_engine.analyze(
                 complexity_score,
                 hardware_score,
+                loop_ops=loop_weighted_ops(Path(source_file).read_text(encoding="utf-8")),
             )
         )
 

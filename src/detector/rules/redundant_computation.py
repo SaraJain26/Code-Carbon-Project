@@ -10,6 +10,22 @@ from knowledge import RuleConfidence
 
 class RedundantComputationDetector:
     RULE_ID = "EKB-COMP-002"
+    PURE_BUILTINS = {"abs", "all", "any", "bool", "float", "int", "len", "max", "min", "sum", "tuple"}
+
+    @classmethod
+    def _safe_builtin_call(cls, call: ast.Call) -> bool:
+        if not isinstance(call.func, ast.Name) or call.func.id not in cls.PURE_BUILTINS:
+            return False
+        if call.func.id == "sum" and len(call.args) == 1 and isinstance(call.args[0], ast.Tuple):
+            return all(isinstance(v, ast.Constant) and isinstance(v.value, (int, float, complex, bool)) for v in call.args[0].elts)
+        if call.func.id == "len" and len(call.args) == 1 and isinstance(call.args[0], (ast.Tuple, ast.List, ast.Constant)):
+            return True
+        if call.func.id == "abs" and len(call.args) == 1 and isinstance(call.args[0], ast.Constant) and isinstance(call.args[0].value, (int, float, complex, bool)):
+            return True
+        if call.func.id in {"min", "max"} and len(call.args) == 1 and isinstance(call.args[0], (ast.Tuple, ast.List)):
+            values = call.args[0].elts
+            return bool(values) and all(isinstance(v, ast.Constant) and isinstance(v.value, (int, float)) for v in values)
+        return False
 
     def detect(self, context: DetectionContext) -> list[Candidate]:
         result = context.analysis_result
@@ -53,7 +69,7 @@ class RedundantComputationDetector:
                         if isinstance(child, ast.Name) and child.id in loop_vars:
                             is_invariant = False
                             break
-                        if isinstance(child, ast.Call):
+                        if isinstance(child, ast.Call) and not self._safe_builtin_call(child):
                             is_invariant = False
                             break
 

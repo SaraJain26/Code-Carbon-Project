@@ -36,6 +36,14 @@ while True:
     assert "timed out" in (res.error_message or "")
 
 
+def test_sandbox_blocks_network_access():
+    res = SandboxedRuntimeExecutor(timeout_sec=1.0).execute_sandboxed(
+        "import socket\nsocket.create_connection(('127.0.0.1', 9), timeout=0.1)"
+    )
+    assert res.status == "error"
+    assert "Network access is blocked" in (res.error_message or "")
+
+
 def test_sandbox_measure_comparison():
     orig_code = """
 res = []

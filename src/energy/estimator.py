@@ -10,7 +10,7 @@ Model:
 
 where
 
-    Runtime = SCI / HPI
+    Runtime is supplied by RuntimeEstimator and includes its static LoopOps term.
 
 The estimated energy is expressed in reference Joules
 (Watt-seconds). It is intended for relative comparison
@@ -56,8 +56,5 @@ class EnergyEstimator:
         )
 
         return EnergyEstimate(
-            energy_joules=round(
-                energy,
-                4,
-            ),
+            energy_joules=energy,
         )

@@ -12,10 +12,11 @@ class RuntimeEstimate:
     """
     Relative runtime estimate.
 
-    Runtime = SCI / HPI
+    Runtime = (SCI / HPI) * (1 + BETA * LoopOps / (LoopOps + K))
     """
 
     runtime: float
+    loop_factor: float = 1.0
 
 
 @dataclass(slots=True)

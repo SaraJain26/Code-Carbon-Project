@@ -30,20 +30,20 @@ class ResearchSustainabilityMetrics:
         """
         Compute the expected active code energy leak score (ESS).
         
-        Formula:
+        Formula (one contribution per distinct rule ID):
             ESS = 10.0 * P_leak
-            P_leak = 1.0 - PROD_{f in F} (1.0 - c_f)
+            P_leak = 1.0 - PROD_{r in Rules} (1.0 - c_r)
             
         Where:
-            c_f: The detection confidence of smell finding f.
+            c_r: min(0.9, maximum detection confidence among findings for rule r).
             P_leak: Fuzzy joint possibility of at least one active leak.
             
         Classification of Components:
         1. Mathematically Derived Components:
            - Algebraic t-conorm operator (Klement et al., 2000; Dubois & Prade, 1985).
         2. Assumptions:
-           - Energy smells behave as independent possibility indicators.
-           - Confidence c_f represents the fuzzy belief of a leak being active.
+           - Distinct rule types behave as independent possibility indicators.
+           - The maximum capped confidence for a rule represents its fuzzy belief of an active leak.
         3. Engineering Approximations:
            - Scaling factor of 10.0 is used to map P_leak to the stable normalizer's range.
         4. Limitations:
@@ -52,10 +52,17 @@ class ResearchSustainabilityMetrics:
         if not report.findings:
             return 0.0
 
-        product = 1.0
+        confidence_by_rule: dict[str, float] = {}
         for finding in report.findings:
-            confidence_val = finding.confidence.value
-            product *= (1.0 - confidence_val)
+            confidence_val = min(0.9, finding.confidence.value)
+            confidence_by_rule[finding.rule_id] = max(
+                confidence_val,
+                confidence_by_rule.get(finding.rule_id, 0.0),
+            )
+
+        product = 1.0
+        for confidence_val in confidence_by_rule.values():
+            product *= 1.0 - confidence_val
 
         p_leak = 1.0 - product
         

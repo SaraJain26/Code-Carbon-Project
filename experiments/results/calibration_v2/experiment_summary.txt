@@ -1,0 +1,45 @@
+CODE-CARBON CALIBRATION V2 EXPERIMENTAL SUMMARY
+=====================================================
+Date: September 22, 2026
+Dataset: Controlled V2 30-Benchmark Suite (N=30, 150 runs)
+Reference Power Proxy: 55.0 W (E_proxy = 55.0 W * mean_runtime_seconds)
+
+1. SCI REGRESSION MODEL (OLS)
+-----------------------------
+Equation: E_proxy = 112.0013 + (-79.1455)*CC + (-13.0663)*ND + (-18.9707)*FD
+Intercept: 112.0013 (SE: 20.6694, p: 0.0000)
+beta_CC:   -79.1455 (SE: 70.5458, p: 0.2722)
+beta_ND:   -13.0663 (SE: 30.0133, p: 0.6669)
+beta_FD:   -18.9707 (SE: 23.6214, p: 0.4292)
+R^2:       0.0727
+Adj R^2:   -0.0343
+MAE:       11.9115 J
+RMSE:      21.1973 J
+
+Normalized Relative Contribution Weights:
+w_CC: 0.7119
+w_ND: 0.1175
+w_FD: 0.1706
+
+2. CIRS WEIGHT CALIBRATION
+--------------------------
+Equation: CIRS_calibrated = 1.0000 * SCI + 0.0000 * ESS
+w_SCI: 1.0000
+w_ESS: 0.0000
+Pearson R^2 with E_proxy: 0.0565
+
+3. FIVE-FOLD CROSS-VALIDATION (HELD-OUT TEST SETS)
+---------------------------------------------------
+Test Set MAE:   13.9303 ± 5.8945 J
+Test Set RMSE:  20.5740 ± 11.5790 J
+Test Set R^2:   -1.2046 ± 1.1467
+Test Pearson r: 0.1014 ± 0.2836
+Test Spearman:  0.2914 ± 0.2767
+
+4. METHODOLOGICAL OBSERVATIONS & LIMITATIONS
+---------------------------------------------
+- Redesigned V2 workloads substantially reduced the category/runtime confounding observed in V1.
+- VIF values (CC=1.04, ND=1.38, FD=1.33) indicate low multicollinearity among predictors.
+- Raw Nesting Depth spans [1, 2, 3, 5, 9] (normalized 0.1, 0.2, 0.3, 0.5, 0.9), providing 5 unique normalized values.
+- Runtimes are 100% CPU-bound, deterministic, and execute in 0.86s to 2.07s (mean 1.53s), completely eliminating Python process startup noise (< 0.23% of runtime).
+- All empirical coefficients represent external calibration within this controlled setting and do NOT replace production formulas.

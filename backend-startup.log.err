@@ -1,0 +1,8 @@
+INFO:     Started server process [17184]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+C:\Users\Laasya M Bhelley\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\openapi\utils.py:252: UserWarning: Duplicate Operation ID get_health_health_head for function get_health at D:\Code-Carbon-Project\src\api\main.py
+  warnings.warn(message, stacklevel=1)
+C:\Users\Laasya M Bhelley\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\openapi\utils.py:252: UserWarning: Duplicate Operation ID get_health_api_health_head for function get_health at D:\Code-Carbon-Project\src\api\main.py
+  warnings.warn(message, stacklevel=1)
