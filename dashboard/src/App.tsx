@@ -1001,10 +1001,8 @@ export default function App() {
       form.append('zone', zone);
       form.append('use_global_average', String(globalAverage));
       const requestUrl = `${API}/analyze`;
-      console.log(`[Code-Carbon] Sending POST ${requestUrl} payload:`, { filename: fileToSend.name, zone, globalAverage });
       const response = await fetch(requestUrl, { method: 'POST', body: form });
       const data = await readApiJson<AnalyzeResponse>(response, requestUrl);
-      console.log('[Code-Carbon] Analysis response received:', data);
       setResult(data);
       setAnalysisMode('file');
       navigateView('results');
@@ -1101,9 +1099,7 @@ export default function App() {
 
       if (zipToUpload) {
         fileToUpload = zipToUpload;
-        console.log(`[Code-Carbon] Uploading ZIP archive: ${fileToUpload.name} (${Math.round(fileToUpload.size / 1024)} KB)`);
       } else {
-        console.log(`[Code-Carbon] Zipping ${filesToUpload.length} project file(s) client-side...`);
         const zip = new JSZip();
         for (const item of filesToUpload) {
           const content = await item.file.arrayBuffer();
@@ -1112,19 +1108,16 @@ export default function App() {
         const zipBlob = await zip.generateAsync({ type: 'blob' });
         const rootName = summaryToUse?.name || 'project';
         fileToUpload = new File([zipBlob], `${rootName}.zip`, { type: 'application/zip' });
-        console.log(`[Code-Carbon] Client ZIP created: ${fileToUpload.name} (${Math.round(zipBlob.size / 1024)} KB)`);
       }
 
       form.append('file', fileToUpload);
       form.append('zone', zone);
       form.append('use_global_average', String(globalAverage));
       const requestUrl = `${API}/analyze-project`;
-      console.log(`[Code-Carbon] Sending POST ${requestUrl} payload...`);
       const response = await fetch(requestUrl, { method: 'POST', body: form });
       const rawProjectData = await readApiJson<Partial<ProjectAnalyzeResponse>>(response, requestUrl);
       const projectIsOutdated = !isCurrentProjectResponse(rawProjectData);
       const projData = normalizeProjectResponse(rawProjectData);
-      console.log(`[Code-Carbon] Project analysis complete:`, projData);
       setProjectResponseOutdated(projectIsOutdated);
       setProjectResult(projData);
       setAnalysisMode('project');
