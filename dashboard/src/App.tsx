@@ -1,6 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, AlertCircle, ArrowLeft, ArrowRight, ChevronDown, ChevronRight, Clock3, Code2, Copy, Download, FileCode2, FileText, Flame, Folder, FolderArchive, Gauge, Globe2, Leaf, LoaderCircle, Moon, Play, Search, Sparkles, Sun, Upload, X } from 'lucide-react';
-import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Pie, PieChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { AnalyzeResponse, ForecastResponse, ProjectAnalyzeResponse, ProjectFileResult } from './api-types';
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -2545,10 +2545,40 @@ function formatHour(isoStr?: string): string {
   try {
     const d = new Date(isoStr);
     if (isNaN(d.getTime())) return isoStr;
-    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+    return d.toLocaleTimeString(undefined, { hour: 'numeric', hour12: true });
   } catch {
     return isoStr;
   }
+}
+
+function formatForecastClock(isoStr?: string, includeDate = false): string {
+  if (!isoStr) return '—';
+  const date = new Date(isoStr);
+  if (!Number.isFinite(date.getTime())) return isoStr;
+  const clock = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true });
+  return includeDate
+    ? `${date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })} ${clock} ${LOCAL_TIME_ZONE_LABEL}`
+    : `${clock} ${LOCAL_TIME_ZONE_LABEL}`;
+}
+
+function formatForecastDay(isoStr: string): string {
+  const parts = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' }).formatToParts(new Date(isoStr));
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.weekday} ${values.day} ${values.month}`;
+}
+
+function formatUtcClock(isoStr?: string): string {
+  if (!isoStr) return '—';
+  const date = new Date(isoStr);
+  return Number.isFinite(date.getTime())
+    ? `${date.toLocaleTimeString('en-GB', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', hour12: false })} UTC`
+    : isoStr;
+}
+
+function ordinal(value: number): string {
+  const mod100 = value % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${value}th`;
+  return `${value}${value % 10 === 1 ? 'st' : value % 10 === 2 ? 'nd' : value % 10 === 3 ? 'rd' : 'th'}`;
 }
 
 function isInCurrentLocalHour(isoStr?: string): boolean {
@@ -2619,15 +2649,47 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
     const currentDate = new Date(timestamp);
     const isDayBoundary = Boolean(previous && previous.toLocaleDateString() !== currentDate.toLocaleDateString());
     return {
-      time: `${isDayBoundary ? `${currentDate.toLocaleDateString(undefined, { day: '2-digit', month: 'short' })} ` : ''}${formatHour(item.timestamp)}`,
-      intensity: item.carbon_intensity,
+      time: isDayBoundary
+        ? formatForecastDay(item.timestamp)
+        : formatHour(item.timestamp),
+      tickKey: item.timestamp,
+      tickHour: currentDate.getHours(),
+      isDayBoundary,
+      intensity: Number(item.carbon_intensity),
       emissions: item.emissions_g,
-      isOptimal: hasCleanerWindow && index === recTimeIndex,
+      isOptimal: hasCleanerWindow && index === recTimeIndex && Number(item.carbon_intensity) < Number(intensityNow),
       isCurrent: hasCurrentForecastPoint && index === currentPointIndex,
       rawTs: item.timestamp
     };
   });
   const currentPoint = chartData.find((item: any) => item.isCurrent);
+  const remainingForecast = chartData.slice(Math.max(0, currentPointIndex));
+  const minPoint = remainingForecast.reduce((best: any, point: any) => !best || point.intensity < best.intensity ? point : best, null);
+  const maxPoint = remainingForecast.reduce((worst: any, point: any) => !worst || point.intensity > worst.intensity ? point : worst, null);
+  const recommendedPoint = recTimeIndex >= 0 ? chartData[recTimeIndex] : null;
+  const liveNumber = Number(intensityNow);
+  const currentForecastNumber = Number(currentPoint?.intensity);
+  const percentVsLive = (value: number) => liveNumber > 0 ? (value - liveNumber) / liveNumber * 100 : 0;
+  const headline = recommendedPoint?.isOptimal
+    ? `Best time: ${formatForecastClock(recommendedPoint.rawTs, true)}, ${Math.abs(percentVsLive(recommendedPoint.intensity)).toFixed(1)}% less carbon than now.`
+    : `Best time to run: now (${formatForecastClock(currentPoint?.rawTs)}). The grid gets up to ${Math.max(0, percentVsLive(Number(maxPoint?.intensity || liveNumber))).toFixed(1)}% dirtier by ${formatForecastClock(maxPoint?.rawTs)}.`;
+  const values = chartData.map((point: any) => point.intensity);
+  const rangeMin = Math.min(...values);
+  const rangeMax = Math.max(...values);
+  const rangeThird = (rangeMax - rangeMin) / 3 || 1;
+  const barColor = (value: number) => value <= rangeMin + rangeThird ? '#238653' : value <= rangeMin + rangeThird * 2 ? '#c58a16' : '#c5483c';
+  const yMax = Math.max(800, Math.ceil(Math.max(rangeMax, liveNumber) / 200) * 200);
+  const yTicks = Array.from({ length: Math.floor(yMax / 200) + 1 }, (_value, index) => index * 200);
+  const xTicks = chartData.filter((point: any) => point.isDayBoundary || point.tickHour % 3 === 0).map((point: any) => point.tickKey);
+  const currentDay = new Date().toLocaleDateString();
+  const todayValues = chartData.filter((point: any) => new Date(point.rawTs).toLocaleDateString() === currentDay).map((point: any) => point.intensity);
+  const todayMin = Math.min(...(todayValues.length ? todayValues : values));
+  const todayMax = Math.max(...(todayValues.length ? todayValues : values));
+  const rankOf = (value: number) => 1 + chartData.filter((point: any) => point.intensity < value).length;
+  const rankedTime = (point: any) => `${formatForecastClock(point?.rawTs)} · ${fixed(point?.intensity, 0)} gCO₂eq/kWh`;
+  const currentDifferenceNote = Number.isFinite(currentForecastNumber) && currentForecastNumber !== liveNumber
+    ? `Live reading ${fixed(liveNumber, 0)}; forecast for the current hour ${fixed(currentForecastNumber, 0)} (different source/time resolution).`
+    : `Live reading ${fixed(liveNumber, 0)}; forecast for the current hour ${fixed(currentForecastNumber, 0)}. These are separate live and hourly forecast readings.`;
 
   return (
     <div style={{ display: 'grid', gap: '20px', marginTop: '20px' }}>
@@ -2671,79 +2733,60 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
         </p>
       </section>
 
-      <section className="panel" style={{ background: 'var(--card)', border: '1px solid var(--line)', padding: '20px', borderRadius: '10px' }}>
+      <section className="panel hourly-forecast-panel" style={{ background: 'var(--card)', border: '1px solid var(--line)', padding: '20px', borderRadius: '10px' }}>
         <div className="panel-head">
           <div>
             <p className="overline">24-HOUR CARBON INTENSITY FORECAST</p>
             <h3>Hourly Grid Carbon Intensity</h3>
-            <p className="forecast-chart-help">Times use your local timezone ({LOCAL_TIME_ZONE_LABEL}); UTC is shown in tooltips. Red marks the current forecast hour, green the recommended hour when one is cleaner, and blue the other hours. The dashed red line shows current grid intensity.</p>
+            <p className="forecast-headline">{headline}</p>
+            <p className="forecast-chart-help">Modeled estimate · Source: {forecast.source} {forecast.source_type} and hourly forecast · {zoneName} ({zoneKey}).</p>
           </div>
           <span style={{ fontSize: '12px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
             {hourly.length} forecast points
           </span>
         </div>
 
-        <div className="chart" style={{ marginTop: '16px' }}>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={chartData} margin={{ top: 20, right: 105, left: -15, bottom: 24 }}>
-              <CartesianGrid vertical={false} stroke="#e7e4dd" strokeDasharray="3 3" />
-              <XAxis dataKey="time" tick={{ fill: '#6d6a63', fontSize: 11 }} label={{ value: `Time (${LOCAL_TIME_ZONE_LABEL}; UTC in tooltip)`, position: 'insideBottom', offset: -5 }} />
-              <YAxis tick={{ fill: '#6d6a63', fontSize: 11 }} domain={[0, 'dataMax + 50']} />
+        <div className="forecast-key-points" aria-label="Key forecast values">
+          <div className="forecast-key-now"><strong>NOW</strong><span>{fixed(liveNumber, 0)} live · forecast {fixed(currentForecastNumber, 0)}</span></div>
+          <div className="forecast-key-clean"><strong>CLEANEST</strong><span>{rankedTime(minPoint)}</span></div>
+          <div className="forecast-key-dirty"><strong>DIRTIEST</strong><span>{rankedTime(maxPoint)}</span></div>
+        </div>
+        <div className="forecast-chart-shell">
+          <ResponsiveContainer width="100%" height={340}>
+            <BarChart data={chartData} margin={{ top: 54, right: 112, left: 22, bottom: 32 }} barCategoryGap="22%">
+              <CartesianGrid vertical={false} stroke="var(--chart-grid)" strokeDasharray="0" />
+              <XAxis dataKey="tickKey" ticks={xTicks} tickFormatter={(value: string) => chartData.find((point: any) => point.tickKey === value)?.time || ''} interval={0} height={42} tick={{ fill: 'var(--muted)', fontSize: 11 }} tickLine={false} axisLine={{ stroke: 'var(--line)' }} label={{ value: `Time (${LOCAL_TIME_ZONE_LABEL})`, position: 'insideBottom', offset: -4, fill: 'var(--muted)', fontSize: 10 }} />
+              <YAxis ticks={yTicks} domain={[0, yMax]} width={74} tick={{ fill: 'var(--muted)', fontSize: 11 }} tickLine={false} axisLine={false} label={{ value: 'gCO₂eq/kWh (lower is cleaner)', angle: -90, position: 'insideLeft', fill: 'var(--muted)', fontSize: 10 }} />
               <Tooltip
-                cursor={{ fill: '#f3f1eb' }}
-                formatter={(val: any, _name: any, item: any) => [
-                  `${val} gCO₂eq/kWh (${fixed(item?.payload?.emissions, 6)} modeled gCO₂eq/run workload footprint)${item?.payload?.isCurrent ? ' · Current hour' : ''}${item?.payload?.isOptimal ? ' · Recommended hour' : ''}. ${CARBON_METHOD_NOTE}`,
-                  'Grid Carbon Intensity'
-                ]}
-                labelFormatter={(label: any, items: readonly any[]) => {
-                  const ts = items?.[0]?.payload?.rawTs;
-                  return ts ? formatWindowTime(ts) : String(label || '');
+                cursor={{ fill: 'var(--chart-hover)' }}
+                content={({ active, payload }: any) => {
+                  const point = payload?.[0]?.payload;
+                  if (!active || !point) return null;
+                  const delta = percentVsLive(point.intensity);
+                  const rank = rankOf(point.intensity);
+                  return <div className="forecast-tooltip"><strong>{formatForecastClock(point.rawTs, true)} · {formatUtcClock(point.rawTs)}</strong><span>Forecast intensity: {fixed(point.intensity, 0)} gCO₂eq/kWh</span><span>{delta >= 0 ? '+' : ''}{delta.toFixed(1)}% vs. live now ({fixed(liveNumber, 0)})</span><span>{ordinal(rank)} cleanest of {chartData.length}</span>{point.isCurrent && <span>Forecast for the current hour; live now is {fixed(liveNumber, 0)}.</span>}{point.isOptimal && <span>BEST · recommended hour</span>}<small>Source: {forecast.source} live reading and hourly forecast.</small></div>;
                 }}
               />
-              {currentPoint && (
-                <ReferenceLine x={currentPoint.time} stroke="#c53030" strokeWidth={2} strokeDasharray="3 3" label={{ value: 'NOW', fill: '#c53030', fontSize: 10, position: 'insideTop' }} />
-              )}
-              {intensityNow && (
-                  <ReferenceLine
-                  y={intensityNow}
-                  stroke="#ef4444"
-                  strokeWidth={2}
-                  strokeDasharray="4 4"
-                  label={{ value: `Current ${fixed(intensityNow, 1)}`, fill: '#9f1d1d', fontSize: 11, fontWeight: 700, position: 'right' }}
-                />
-              )}
-              <Bar dataKey="intensity" name="Grid Intensity" radius={[4, 4, 0, 0]}>
-                {chartData.map((entry: any, index: number) => (
-                  <Cell
-                    key={`cell-${index}`}
-                    fill={entry.isCurrent ? '#d64545' : entry.isOptimal ? '#12a66a' : '#4f83cc'}
-                    stroke={entry.isCurrent && entry.isOptimal ? '#08764a' : entry.isCurrent ? '#a32828' : entry.isOptimal ? '#08764a' : '#3768aa'}
-                    strokeWidth={entry.isCurrent && entry.isOptimal ? 3 : 1}
-                  />
-                ))}
+              <ReferenceLine y={liveNumber} stroke="var(--live-marker)" strokeWidth={1.5} label={{ value: `Live now: ${fixed(liveNumber, 0)}`, position: 'right', fill: 'var(--live-marker)', fontSize: 11, fontWeight: 700 }} />
+              <Bar dataKey="intensity" name="Grid carbon intensity" radius={[4, 4, 0, 0]}>
+                {chartData.map((entry: any, index: number) => <Cell key={`hour-${index}`} fill={barColor(entry.intensity)} stroke={entry.isCurrent ? 'var(--now-outline)' : entry.isOptimal ? 'var(--best-outline)' : barColor(entry.intensity)} strokeWidth={entry.isCurrent || entry.isOptimal ? 3 : 1} />)}
+                <LabelList dataKey="intensity" content={(props: any) => {
+                  const point = chartData[props.index];
+                  if (!point?.isCurrent && !point?.isOptimal) return null;
+                  const label = point.isCurrent && point.isOptimal ? 'NOW · BEST' : point.isCurrent ? 'NOW' : 'BEST';
+                  const width = label.length > 5 ? 70 : 46;
+                  const x = (props.x || 0) + (props.width || 0) / 2 - width / 2;
+                  const y = Math.max(3, (props.y || 0) - 24);
+                  const fill = point.isOptimal ? 'var(--best-tag)' : 'var(--now-tag)';
+                  return <g><rect x={x} y={y} width={width} height={18} rx={8} fill={fill} /><text x={x + width / 2} y={y + 12} textAnchor="middle" fill="#fff" fontSize={9} fontWeight={800}>{label}</text></g>;
+                }} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
-
-        <div className="legend-custom-wrap">
-          <div className="legend-custom-item">
-            <span className="legend-custom-dot" style={{ background: '#d64545' }}></span>
-            <span>Current hour</span>
-          </div>
-          <div className="legend-custom-item">
-            <span className="legend-custom-dot" style={{ background: '#12a66a' }}></span>
-            <span>{hasCleanerWindow && recTimeIso ? 'Recommended hour' : 'Recommended hour · none cleaner'}</span>
-          </div>
-          <div className="legend-custom-item">
-            <span className="legend-custom-dot" style={{ background: '#4f83cc' }}></span>
-            <span>Other forecast hours</span>
-          </div>
-          <div className="legend-custom-item">
-            <span className="legend-custom-line" style={{ borderColor: '#c53030' }}></span>
-            <span>Current level</span>
-          </div>
-        </div>
+        <div className="forecast-scale-legend"><span className="scale-label">Cleaner</span><span className="scale-gradient" aria-hidden="true" /><span className="scale-label">Dirtier</span><span className="scale-marker"><i />NOW outlined</span>{recommendedPoint?.isOptimal && <span className="scale-marker best"><i />BEST outlined</span>}</div>
+        <p className="forecast-live-note">{currentDifferenceNote}</p>
+        <div className="forecast-summary-chips"><div><span>Best window</span><strong>{recommendedPoint?.isOptimal ? rankedTime(recommendedPoint) : `Now · live ${fixed(liveNumber, 0)} gCO₂eq/kWh`}</strong></div><div><span>Worst window</span><strong>{rankedTime(maxPoint)}</strong></div><div><span>Today's range</span><strong>{fixed(todayMin, 0)}–{fixed(todayMax, 0)} gCO₂eq/kWh</strong></div></div>
       </section>
     </div>
   );
