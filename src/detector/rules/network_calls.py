@@ -22,12 +22,22 @@ class NetworkCallDetector:
         candidates: list[Candidate] = []
 
         for operation in result.network_operations:
+            client_method = operation.operation.rsplit(".", 1)[-1].lower()
+            possible_flask_test_client = (
+                operation.operation.lower().startswith("client.")
+                and client_method in {"get", "post"}
+            )
 
             candidates.append(
                 Candidate.create(
                     rule_id=self.RULE_ID,
-                    confidence=RuleConfidence(0.90),
-                    message="Network operation detected.",
+                    confidence=RuleConfidence(0.50 if possible_flask_test_client else 0.90),
+                    message=(
+                        "Network operation detected; may be a false positive because client.get/post "
+                        "can be a Flask test-client call."
+                        if possible_flask_test_client
+                        else "Network operation detected."
+                    ),
                     evidence=[
                         CandidateEvidence(
                             kind=EvidenceKind.NETWORK_OPERATION,
