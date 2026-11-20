@@ -1,16 +1,9 @@
 import { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, AlertCircle, ArrowLeft, ArrowRight, ChevronDown, ChevronRight, Clock3, Code2, Copy, Download, FileCode2, FileText, Flame, Folder, FolderArchive, Gauge, Globe2, Leaf, LoaderCircle, Moon, Play, Search, Sparkles, Sun, Upload, X } from 'lucide-react';
-import { Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Pie, PieChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { AnalyzeResponse, ForecastResponse, ProjectAnalyzeResponse, ProjectFileResult } from './api-types';
+import { getCategoryCounts, getEssBands, getEssFineHistogram, getScopeFiles, getScopeMetrics, isTestOrExamplePath } from './project-scope';
 
-const CATEGORY_COLORS: Record<string, string> = {
-  'Computation': '#2e6956',
-  'File & I/O': '#3b82f6',
-  'Memory': '#8b5cf6',
-  'Network': '#06b6d4',
-  'Control Flow': '#f59e0b',
-  'Other': '#64748b'
-};
 const CARBON_METHOD_NOTE = 'Carbon = modeled energy (relative J -> kWh) x grid intensity (gCO2eq/kWh). The energy score is a relative model, so carbon is a modeled comparison, not a measured emission.';
 const LOCAL_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
 const LOCAL_TIME_ZONE_LABEL = ['Asia/Kolkata', 'Asia/Calcutta'].includes(LOCAL_TIME_ZONE) ? 'IST' : LOCAL_TIME_ZONE;
@@ -27,7 +20,7 @@ function ChartFallback({ title, message }: { title?: string; message?: string })
   );
 }
 
-type RankedMetricItem = { name: string; relativePath: string; value: number };
+type RankedMetricItem = { name: string; relativePath: string; value: number; valueLabel?: string };
 
 function uniqueRankedPath(path: string, allPaths: string[], limit = 34): string {
   const parts = path.replace(/\\/g, '/').split('/');
@@ -48,12 +41,21 @@ function uniqueRankedPath(path: string, allPaths: string[], limit = 34): string 
   return `…/${parentPart}${filename.slice(0, filenameStart)}…${filename.slice(-filenameEnd)}`;
 }
 
-function RankedMetricBars({ items, color, formatValue, label, valueHelp }: {
+function higherIsWorseColor(value: number, allValues: number[]): string {
+  const sorted = [...allValues].sort((a, b) => a - b);
+  if (!sorted.length) return '#238653';
+  const lowCut = sorted[Math.floor((sorted.length - 1) / 3)];
+  const highCut = sorted[Math.floor((sorted.length - 1) * 2 / 3)];
+  return value <= lowCut ? '#238653' : value <= highCut ? '#c58a16' : '#c5483c';
+}
+
+function RankedMetricBars({ items, color, formatValue, label, valueHelp, colorForValue }: {
   items: RankedMetricItem[];
   color: string;
   formatValue: (value: number) => string;
   label: string;
   valueHelp?: string;
+  colorForValue?: (value: number) => string;
 }) {
   if (!items.length) return <ChartFallback title="No successful file results" />;
   const maxValue = Math.max(...items.map(item => item.value), 0);
@@ -63,11 +65,12 @@ function RankedMetricBars({ items, color, formatValue, label, valueHelp }: {
     <div className="ranked-metric-list" role="list" aria-label={label}>
       {items.map((item, index) => (
         <div className="ranked-metric-row" role="listitem" key={`${item.relativePath}-${index}`} title={`${item.relativePath} · ${formatValue(item.value)}${valueHelp ? ` · ${valueHelp}` : ''}`}>
-          <span className="ranked-metric-name">{uniqueRankedPath(item.relativePath, allPaths)}</span>
+          <span className="ranked-metric-name" title={item.relativePath}>{uniqueRankedPath(item.relativePath, allPaths)}</span>
+          <span className={`file-scope-chip ${isTestOrExamplePath(item.relativePath) ? 'is-test' : 'is-source'}`}>{isTestOrExamplePath(item.relativePath) ? 'test' : 'source'}</span>
           <span className="ranked-metric-track" aria-hidden="true">
-            <span className="ranked-metric-fill" style={{ width: `${Math.max(2, (item.value / maxValue) * 100)}%`, background: color }} />
+            <span className="ranked-metric-fill" style={{ width: `${Math.max(2, (item.value / maxValue) * 100)}%`, background: colorForValue?.(item.value) || color }} />
           </span>
-          <strong className="ranked-metric-value">{formatValue(item.value)}</strong>
+          <strong className="ranked-metric-value">{item.valueLabel || formatValue(item.value)}</strong>
         </div>
       ))}
     </div>
@@ -83,10 +86,6 @@ function ruleExampleReplacement(example?: string | null): string | undefined {
   const afterMarker = example.match(/(?:^|\n)\s*# After:\s*\n/i);
   if (!afterMarker || afterMarker.index === undefined) return undefined;
   return example.slice(afterMarker.index + afterMarker[0].length).trim() || undefined;
-}
-
-function isTestOrExamplePath(path: string): boolean {
-  return /(?:^|\/)(?:tests?|examples?)(?:\/|$)|(?:^|\/)test_[^/]*$/i.test(path.replace(/\\/g, '/'));
 }
 
 function projectFixState(file: ProjectFileResult): 'applied' | 'rejected' | 'not_auto_fixable' | 'no_issues' | 'failed' {
@@ -597,7 +596,10 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [projectResponseOutdated, setProjectResponseOutdated] = useState(false);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('codecarbon-theme') === 'dark');
-  const [excludeTestCode, setExcludeTestCode] = useState(true);
+  const [sourceOnly, setSourceOnly] = useState(false);
+  const excludeTestCode = sourceOnly;
+  const setExcludeTestCode = setSourceOnly;
+  const [projectMetricTab, setProjectMetricTab] = useState<'complexity' | 'ess' | 'cirs'>('complexity');
 
   const [projectZipFile, setProjectZipFile] = useState<File | null>(null);
   const [projectFiles, setProjectFiles] = useState<ScannedFile[]>([]);
@@ -606,7 +608,7 @@ export default function App() {
   const [tableSearch, setTableSearch] = useState('');
   const [fileStatusFilter, setFileStatusFilter] = useState<'all' | 'success' | 'error'>('all');
   const [impactStatusFilter, setImpactStatusFilter] = useState<'all' | 'applied' | 'rejected' | 'not_auto_fixable' | 'no_issues'>('all');
-  const [sortColumn, setSortColumn] = useState<'filename' | 'lines_of_code' | 'findings_count' | 'sci' | 'ess' | 'cirs' | 'energy_joules'>('findings_count');
+  const [sortColumn, setSortColumn] = useState<'filename' | 'lines_of_code' | 'findings_count' | 'sci' | 'ess' | 'cirs' | 'energy_joules'>('energy_joules');
   const [sortAsc, setSortAsc] = useState(false);
 
   const fileInput = useRef<HTMLInputElement>(null);
@@ -691,8 +693,10 @@ export default function App() {
   const recommendations = Array.isArray(result?.recommendations) ? result.recommendations : (result?.recommendations?.recommendations || []);
   const resultFindings = result?.pipeline_raw?.energy_smell_report?.findings || result?.findings || [];
   const postRefactor = result?.post_refactor_estimation || {};
-  const projectVisibleFindingCount = (projectResult?.files ?? []).reduce((sum, file) => sum + (file.status === 'success' && (!excludeTestCode || !isTestOrExamplePath(file.relative_path)) ? file.findings_count : 0), 0);
-  const projectVisibleRuleCount = (projectResult?.files ?? []).reduce((sum, file) => sum + (file.status === 'success' && (!excludeTestCode || !isTestOrExamplePath(file.relative_path)) ? file.rule_count : 0), 0);
+  const scopeFiles = projectResult ? getScopeFiles(projectResult.files, sourceOnly) : [];
+  const scopeMetrics = getScopeMetrics(scopeFiles);
+  const scopeLabel = sourceOnly ? 'Source code only' : 'All files';
+  const projectVisibleFindingCount = scopeMetrics.findingLocations;
 
   // Individual Findings count from backend summary / findings for single file
   const totalFindingsCount =
@@ -725,8 +729,8 @@ export default function App() {
   const impactForecast = (projectResult?.scheduling?.status === 'available'
     ? projectResult.scheduling as ForecastResponse
     : forecast);
-  const projectBeforeEnergy = Number(projectBefore?.energy ?? projectResult?.total_energy_joules ?? 0);
-  const projectAfterEnergy = Number(projectAfter?.energy ?? projectBeforeEnergy);
+  const projectBeforeEnergy = sourceOnly ? scopeMetrics.beforeEnergy : Number(projectBefore?.energy ?? projectResult?.total_energy_joules ?? scopeMetrics.energyJoules);
+  const projectAfterEnergy = sourceOnly ? scopeMetrics.afterEnergy : Number(projectAfter?.energy ?? projectBeforeEnergy);
   const impactCurrentIntensity = Number(impactForecast?.intensity_now ?? projectResult?.carbon_intensity ?? impactForecast?.current_carbon_intensity ?? carbonIntensityToDisplay ?? 0);
   const impactForecastMinimum = Number(impactForecast?.forecast_minimum_intensity ?? impactForecast?.lowest_forecast_intensity ?? impactCurrentIntensity);
   // Do not model the recommended window as a carbon increase when every forecast
@@ -741,20 +745,20 @@ export default function App() {
   const impactBeforeValues = {
     energy: projectBeforeEnergy,
     carbon: projectBeforeEnergy / 3_600_000 * impactCurrentIntensity,
-    ess: Number(projectBefore?.ess ?? 0),
-    cirs: Number(projectResult?.total_cirs ?? projectBefore?.cirs ?? 0),
+    ess: sourceOnly ? scopeMetrics.beforeEss : Number(projectBefore?.ess ?? 0),
+    cirs: sourceOnly ? scopeMetrics.beforeCirs : Number(projectResult?.total_cirs ?? projectBefore?.cirs ?? 0),
   };
   const impactAfterValues = {
     energy: projectAfterEnergy,
     carbon: projectAfterEnergy / 3_600_000 * impactScheduledIntensity,
-    ess: Number(projectAfter?.ess ?? impactBeforeValues.ess),
-    cirs: Number(projectAfter?.cirs ?? impactBeforeValues.cirs) * cirsSchedulingRatio,
+    ess: sourceOnly ? scopeMetrics.afterEss : Number(projectAfter?.ess ?? impactBeforeValues.ess),
+    cirs: (sourceOnly ? scopeMetrics.afterCirs : Number(projectAfter?.cirs ?? impactBeforeValues.cirs)) * cirsSchedulingRatio,
   };
   const impactRows = [
     { name: 'Energy', unit: 'modeled J (relative)', digits: 2, before: impactBeforeValues.energy, after: impactAfterValues.energy },
     { name: 'Carbon footprint', unit: 'modeled gCO₂eq/run', digits: 6, before: impactBeforeValues.carbon, after: impactAfterValues.carbon, help: CARBON_METHOD_NOTE },
     { name: 'Finding locations', unit: 'detector locations', digits: 0, before: (projectResult?.files ?? []).reduce((sum, file) => sum + (file.status === 'success' && (!excludeTestCode || !isTestOrExamplePath(file.relative_path)) ? file.findings_count : 0), 0), after: (projectResult?.files ?? []).reduce((sum, file) => sum + (file.status === 'success' && (!excludeTestCode || !isTestOrExamplePath(file.relative_path)) ? Number(file.single_file_response?.post_refactor_estimation?.finding_locations_after ?? file.findings_count) : 0), 0) },
-    { name: 'Mean ESS per file', unit: 'index (0–10)', digits: 2, before: projectResult?.avg_ess ?? 0, after: (projectResult?.files ?? []).filter(file => file.status === 'success').reduce((sum, file) => sum + file.after_ess, 0) / Math.max(1, projectResult?.successful_files ?? 0) },
+    { name: 'Mean ESS per file', unit: 'index (0–10)', digits: 2, before: scopeMetrics.meanEss, after: scopeFiles.filter(file => file.status === 'success').reduce((sum, file) => sum + file.after_ess, 0) / Math.max(1, scopeMetrics.successfulFiles) },
     { name: 'Sum of per-file ESS (index)', unit: 'index (0–10) · one run per file', digits: 3, before: impactBeforeValues.ess, after: impactAfterValues.ess },
     { name: 'CIRS', unit: 'summed risk-weighted score', digits: 6, before: impactBeforeValues.cirs, after: impactAfterValues.cirs },
   ];
@@ -830,99 +834,53 @@ export default function App() {
     return Array.from(map.values()).sort((a, b) => b.priority_score - a.priority_score);
   }, [projectResult, excludeTestCode]);
   const projectRecommendationBadge = projectResult
-    ? `${projectAggregatedRecommendations.length} suggestions · ${projectResult?.auto_fixable_count ?? 0} auto-fixable · ${projectResult?.auto_applied_count ?? 0} applied`
+    ? `${projectAggregatedRecommendations.length} suggestions · ${scopeFiles.reduce((sum, file) => sum + file.auto_fixable_count, 0)} auto-fixable · ${scopeFiles.reduce((sum, file) => sum + file.auto_applied_count, 0)} applied`
     : `${recommendations.length} recommendations`;
 
   // Project-wide findings category distribution
-  const projectCategoryDistribution = useMemo(() => {
-    if (!projectResult?.files) return [];
-    const categories: Record<string, number> = {
-      'Computation': 0,
-      'File & I/O': 0,
-      'Memory': 0,
-      'Network': 0,
-      'Control Flow': 0
-    };
-
-    for (const fileItem of projectResult.files) {
-      if (excludeTestCode && isTestOrExamplePath(fileItem.relative_path)) continue;
-      const fileResp = fileItem.single_file_response;
-      if (!fileResp) continue;
-      const findings = fileResp.pipeline_raw?.energy_smell_report?.findings || [];
-      for (const f of findings) {
-        const cat = String(f.category || f.rule_id || '').toLowerCase();
-        const ruleId = String(f.rule_id || '').toLowerCase();
-        if (ruleId.includes('io-') || ['io', 'file & i/o', 'file and i/o'].includes(cat)) categories['File & I/O'] += 1;
-        else if (ruleId.includes('net-') || cat.includes('network') || cat.includes('http') || cat.includes('api')) categories['Network'] += 1;
-        else if (ruleId.includes('mem-') || cat.includes('memory') || cat.includes('allocation')) categories['Memory'] += 1;
-        else if (cat.includes('nest') || cat.includes('loop') || cat.includes('comput') || cat.includes('math') || ruleId.includes('comp-')) categories['Computation'] += 1;
-        else categories['Control Flow'] += 1;
-      }
-    }
-
-    return Object.entries(categories).map(([name, count]) => ({ name, count }));
-  }, [projectResult, excludeTestCode]);
+  const projectCategoryDistribution = useMemo(() => getCategoryCounts(scopeFiles), [scopeFiles]);
 
   // Top ranked file highlights
   const topEnergyFiles = useMemo(() => {
-    if (!projectResult?.files) return [];
-    return [...projectResult.files].sort((a, b) => b.energy_joules - a.energy_joules).slice(0, 3);
-  }, [projectResult]);
+    return [...scopeFiles].filter(file => file.status === 'success').sort((a, b) => b.energy_joules - a.energy_joules).slice(0, 3);
+  }, [scopeFiles]);
 
   const topFindingsFiles = useMemo(() => {
-    if (!projectResult?.files) return [];
-    return [...projectResult.files].filter(file => !excludeTestCode || !isTestOrExamplePath(file.relative_path)).sort((a, b) => b.findings_count - a.findings_count).slice(0, 3);
-  }, [projectResult, excludeTestCode]);
+    return [...scopeFiles].filter(file => file.status === 'success' && file.findings_count > 0).sort((a, b) => b.findings_count - a.findings_count).slice(0, 3);
+  }, [scopeFiles]);
 
-  const topCarbonFiles = useMemo(() => {
-    if (!projectResult?.files) return [];
-    return [...projectResult.files]
-      .map(f => ({
-        ...f,
-        carbonGrams: ((f.energy_joules || 0) / 3600000.0) * (carbonIntensityToDisplay || 435)
-      }))
-      .sort((a, b) => b.carbonGrams - a.carbonGrams)
-      .slice(0, 3);
-  }, [projectResult, carbonIntensityToDisplay]);
+  const fixThisFirstFile = useMemo(() => getScopeFiles(projectResult?.files ?? [], true)
+    .filter(file => file.status === 'success' && file.findings_count > 0)
+    .sort((a, b) => b.energy_joules - a.energy_joules)[0], [projectResult]);
 
   // Project chart datasets
   const projectFilesEnergyData = useMemo(() => {
     if (!projectResult?.files) return [];
-    return projectResult.files.filter(f => f.status === 'success').map(f => ({
+    return scopeFiles.filter(f => f.status === 'success').map(f => ({
       name: f.filename,
       relativePath: f.relative_path,
       energyJoules: Number(f.energy_joules || 0),
       energyKwh: Number((f.energy_joules || 0) / 3600000.0)
     })).sort((a, b) => b.energyJoules - a.energyJoules).slice(0, 10);
-  }, [projectResult]);
-
-  const projectFilesCarbonData = useMemo(() => {
-    if (!projectResult?.files) return [];
-    return projectResult.files.filter(f => f.status === 'success').map(f => ({
-      name: f.filename,
-      relativePath: f.relative_path,
-      carbonGrams: Number(((f.energy_joules || 0) / 3600000.0) * (carbonIntensityToDisplay || 435)),
-      cirs: Number(f.cirs || 0)
-    })).sort((a, b) => b.carbonGrams - a.carbonGrams).slice(0, 10);
-  }, [projectResult, carbonIntensityToDisplay]);
+  }, [projectResult, scopeFiles]);
 
   const projectFilesSciData = useMemo(() => {
     if (!projectResult?.files) return [];
-    return projectResult.files.filter(f => f.status === 'success').map(f => ({
+    return scopeFiles.filter(f => f.status === 'success').map(f => ({
       name: f.filename,
       relativePath: f.relative_path,
       sci: Number(f.sci || 0)
     })).sort((a, b) => b.sci - a.sci).slice(0, 10);
-  }, [projectResult]);
+  }, [projectResult, scopeFiles]);
 
   const projectFilesEssData = useMemo(() => {
     if (!projectResult?.files) return [];
-    return projectResult.files.filter(f => f.status === 'success').map(f => ({
+    return scopeFiles.filter(f => f.status === 'success').map(f => ({
       name: f.filename,
       relativePath: f.relative_path,
       ess: Number(f.ess || 0)
     })).sort((a, b) => b.ess - a.ess).slice(0, 10);
-  }, [projectResult]);
+  }, [projectResult, scopeFiles]);
 
   const projectFilesCirsData = useMemo(() => {
     if (!projectResult?.files) return [];
@@ -933,26 +891,10 @@ export default function App() {
     })).sort((a, b) => b.cirs - a.cirs).slice(0, 10);
   }, [projectResult]);
 
-  const projectCategoryDistributionData = useMemo(() => {
-    return projectCategoryDistribution.filter(c => c.count > 0);
-  }, [projectCategoryDistribution]);
-
   const projectEssDistribution = useMemo(() => {
-    if (!projectResult?.files) return [];
-    const bins = [
-      { label: '0-2', min: 0, max: 2, count: 0 },
-      { label: '2-4', min: 2, max: 4, count: 0 },
-      { label: '4-6', min: 4, max: 6, count: 0 },
-      { label: '6-8', min: 6, max: 8, count: 0 },
-      { label: '8-10', min: 8, max: 10.000001, count: 0 },
-    ];
-    for (const file of projectResult.files) {
-      if (file.status !== 'success') continue;
-      const bin = bins.find(item => file.ess >= item.min && file.ess < item.max);
-      if (bin) bin.count += 1;
-    }
-    return bins;
-  }, [projectResult]);
+    return getEssFineHistogram(scopeFiles);
+  }, [scopeFiles]);
+  const projectEssBands = useMemo(() => getEssBands(scopeFiles), [scopeFiles]);
 
   const singleFileComplexityData = useMemo(() => {
     if (!result) return [];
@@ -978,7 +920,7 @@ export default function App() {
   // Sorted and searched project file breakdown table
   const sortedProjectFiles = useMemo(() => {
     if (!projectResult?.files) return [];
-    return [...projectResult.files]
+    return [...scopeFiles]
       .filter(f => f.filename.toLowerCase().includes(tableSearch.toLowerCase()) || f.relative_path.toLowerCase().includes(tableSearch.toLowerCase()))
       .filter(f => fileStatusFilter === 'all' || f.status === fileStatusFilter)
       .sort((a, b) => {
@@ -989,26 +931,26 @@ export default function App() {
         }
         return sortAsc ? (valA as number) - (valB as number) : (valB as number) - (valA as number);
       });
-  }, [projectResult, tableSearch, fileStatusFilter, sortColumn, sortAsc]);
+  }, [projectResult, scopeFiles, tableSearch, fileStatusFilter, sortColumn, sortAsc]);
 
   const impactStatusCounts = useMemo(() => {
     const counts: Record<string, number> = { applied: 0, rejected: 0, not_auto_fixable: 0, no_issues: 0 };
-    for (const file of projectResult?.files ?? []) {
+    for (const file of scopeFiles) {
       const state = projectFixState(file);
       if (state in counts) counts[state] += 1;
     }
     return counts;
-  }, [projectResult]);
+  }, [scopeFiles]);
   const impactReasonGroups = useMemo(() => {
     const groups = new Map<string, string[]>();
-    for (const file of projectResult?.files ?? []) {
+    for (const file of scopeFiles) {
       const state = projectFixState(file);
       if (state !== 'rejected' && state !== 'not_auto_fixable') continue;
       const reason = file.fix_reason || (state === 'not_auto_fixable' ? 'No safe automatic AST transformation was available for this file.' : 'Candidate was rejected by the modeled quality gate.');
       groups.set(reason, [...(groups.get(reason) || []), file.relative_path]);
     }
     return Array.from(groups.entries());
-  }, [projectResult]);
+  }, [scopeFiles]);
   const impactFilesSorted = useMemo(() => {
     const statusOrder: Record<string, number> = { applied: 0, rejected: 1, not_auto_fixable: 2, no_issues: 3, failed: 4 };
     return (projectResult?.files ?? [])
@@ -1352,6 +1294,8 @@ export default function App() {
     };
   });
 
+  const overviewVerdict = `${scopeMetrics.successfulFiles} files analyzed. ${scopeMetrics.filesWithFindings} files have energy-smell findings; ${scopeMetrics.cleanFiles} have none. ${scopeMetrics.highEssFiles} files are in the high ESS display band. Biggest energy use: ${topEnergyFiles[0] ? `${uniqueRankedPath(topEnergyFiles[0].relative_path, scopeFiles.map(file => file.relative_path))} (${fixed(scopeMetrics.energyJoules ? topEnergyFiles[0].energy_joules / scopeMetrics.energyJoules * 100 : 0, 1)}% of the project total)` : 'no file energy available'}. ${scopeMetrics.findingLocations} finding locations across ${scopeMetrics.distinctRules} distinct rules.`;
+
   return <div className={`shell ${darkMode ? 'dark-theme' : ''}`}>
     <aside className="rail">
       <button className="brand" onClick={() => setView('workspace')}><span className="brand-mark"><Leaf size={18} /></span><span>codecarbon</span></button>
@@ -1423,6 +1367,25 @@ export default function App() {
           <button className={`subnav-tab ${view === 'schedule' ? 'is-active' : ''}`} onClick={() => navigateView('schedule')}>
             <Clock3 size={14} /> Green Scheduling
           </button>
+          {projectResult && ['project', 'recommendations', 'impact'].includes(view) && <div className="project-scope-controls" aria-label="Project analysis scope">
+            <span className="scope-controls-title">Scope</span>
+            <div className="scope-toggle" role="group" aria-label="Overview, Recommendations and Impact scope">
+              <button type="button" aria-pressed={!sourceOnly} className={!sourceOnly ? 'active' : ''} onClick={() => setSourceOnly(false)}>All files</button>
+              <button type="button" aria-pressed={sourceOnly} className={sourceOnly ? 'active' : ''} onClick={() => setSourceOnly(true)}>Source code only <small>(excludes tests/examples)</small></button>
+            </div>
+            <span className="active-scope-label">Active: {scopeLabel}</span>
+          </div>}
+          {projectResult && view === 'project' && <details className="glossary-popover">
+            <summary>What do these mean?</summary>
+            <div className="glossary-popover-content">
+              <p><strong>SCI</strong> — structural complexity index; lower is simpler.</p>
+              <p><strong>ESS</strong> — energy-smell score from 0 to 10; lower means fewer detected patterns.</p>
+              <p><strong>CIRS</strong> — unitless carbon impact risk score, weighted by structure and smell exposure.</p>
+              <p><strong>Modeled J</strong> — relative energy estimate in joules; it is not metered energy.</p>
+              <p><strong>gCO₂eq</strong> — grams of carbon dioxide equivalent; the project carbon value is modeled.</p>
+              <details><summary>How are these computed?</summary><p>SCI, ESS, and CIRS use the project analysis model and its documented formulas. Modeled carbon converts relative modeled J to kWh and multiplies by grid intensity. These are comparisons, not measured consumption or emissions.</p></details>
+            </div>
+          </details>}
         </div>
       )}
 
@@ -1665,368 +1628,152 @@ export default function App() {
       </section>}
 
       {/* FULL PROJECT OVERVIEW */}
-      {projectResult && view === 'project' && <section className="report">
+      {projectResult && view === 'project' && <section className="report project-overview">
         <div className="report-hero">
           <div>
             <p className="overline">FULL PROJECT SUSTAINABILITY ANALYSIS</p>
             <h2>{projectResult.project_name}</h2>
-            <p>{projectResult.total_files} Python files ({projectResult.successful_files} analyzed, {projectResult.error_files} errors) · {projectResult.total_lines_of_code} Total SLOC · Analyzed in {projectResult.total_analysis_time_sec}s</p>
+            <p>{scopeMetrics.totalFiles} Python files in this scope ({scopeMetrics.successfulFiles} analyzed, {scopeMetrics.failedFiles} errors) · {fixed(scopeMetrics.sloc, 0)} SLOC · analyzed in {projectResult.total_analysis_time_sec}s</p>
             <p title={CARBON_METHOD_NOTE}>Grid intensity ⓘ: {projectResult.carbon_intensity == null ? 'Unavailable' : `${fixed(projectResult.carbon_intensity, 2)} gCO₂eq/kWh`} · Zone: {projectResult.carbon_zone || 'Unknown'} · Source: {projectResult.carbon_source_type || 'unknown'} ({projectResult.carbon_source || 'provider unavailable'})</p>
           </div>
           <button className="secondary-button" onClick={() => setView('workspace')}>New project analysis <ChevronRight size={17} /></button>
         </div>
 
-        <label className="test-code-toggle"><input type="checkbox" checked={excludeTestCode} onChange={event => setExcludeTestCode(event.target.checked)} /> Exclude test/example findings from totals <strong>{excludeTestCode ? 'On' : 'Off'}</strong> · {projectResult.files.filter(file => isTestOrExamplePath(file.relative_path)).length} test/example files</label>
+        <section className="overview-verdict" aria-label="Project verdict">
+          <div><p className="overline">THE VERDICT · {scopeLabel.toUpperCase()}</p><p className="overview-verdict-line">{overviewVerdict}</p></div>
+          <p className="overview-direction">Lower is better for every score on this page.</p>
+        </section>
 
-        <div className="metric-grid">
-          <Metric label="Total Files" metric={String(projectResult.total_files)} unit="" tone="blue" />
-          <Metric label="Total Project SLOC" metric={fixed(projectResult.total_lines_of_code, 0)} unit="sum across analyzed files" tone="blue" />
-          <Metric label="Finding locations" metric={fixed(projectVisibleFindingCount, 0)} unit={`${fixed(projectVisibleRuleCount, 0)} per-file rule instances · filtered by test-code toggle`} tone="blue" />
-          <Metric label="Mean SCI per file" metric={fixed(projectResult.avg_sci, 4)} unit="mean · index (0–1)" tone="green" />
-          <Metric label="Mean ESS per file" metric={fixed(projectResult.avg_ess, 2)} unit="mean · score out of 10" tone="amber" />
-          <Metric label="Project energy score" metric={fixed(projectResult.total_energy_joules, 2)} unit="modeled J (relative) · sum across files (one run each)" tone="green" help="Derived from relative model estimates, not metered energy. The aggregate assumes each file runs once." />
-          <Metric label="Mean CIRS per file" metric={fixed(projectResult.avg_cirs, 6)} unit="risk-weighted score (unitless)" tone="ink" help="CIRS research multiplies modeled carbon by a dimensionless SCI and ESS exposure weight; it is not a physical gCO₂eq footprint." />
-          <Metric label="Sum of risk-weighted scores" metric={fixed(projectResult.total_cirs, 6)} unit="unitless · sum across files (one run each)" tone="ink" help="Sum across files assumes each file runs once. Use the unweighted modeled carbon estimate for the carbon footprint." />
+        <div className="metric-grid overview-kpis">
+          <Metric label="Files analyzed" metric={String(scopeMetrics.totalFiles)} unit={`${scopeMetrics.successfulFiles} succeeded · ${scopeMetrics.failedFiles} failed`} tone="blue" scopeLabel={scopeLabel} />
+          <Metric label="Total SLOC" metric={fixed(scopeMetrics.sloc, 0)} unit="sum across analyzed files" tone="blue" scopeLabel={scopeLabel} />
+          <Metric label="Finding locations" metric={fixed(scopeMetrics.findingLocations, 0)} unit={`${fixed(scopeMetrics.distinctRules, 0)} distinct rules`} tone="blue" scopeLabel={scopeLabel} />
+          <Metric label="Mean SCI per file" metric={fixed(scopeMetrics.meanSci, 4)} unit="index (0–1)" tone="green" scopeLabel={scopeLabel} />
+          <Metric label="Mean ESS per file" metric={fixed(scopeMetrics.meanEss, 2)} unit="score (0–10)" tone="amber" scopeLabel={scopeLabel} />
+          <Metric label="Project energy" metric={fixed(scopeMetrics.energyJoules, 2)} unit="modeled J (relative) · one run per file" tone="green" help="Relative model estimate, not metered energy." scopeLabel={scopeLabel} />
+          <Metric label="Mean CIRS per file" metric={fixed(scopeMetrics.meanCirs, 6)} unit="risk-weighted score" tone="ink" help="Unitless risk-weighted score; not physical gCO₂eq." scopeLabel={scopeLabel} />
+          <Metric label="Sum of CIRS scores" metric={fixed(scopeMetrics.totalCirs, 6)} unit="unitless · one run per file" tone="ink" help="Sum of per-file risk-weighted scores." scopeLabel={scopeLabel} />
         </div>
 
-        {/* PROJECT TOP FILES SPOTLIGHT */}
-        <section className="chart-section">
-          <div className="chart-section-title">
-            <div>
-              <p className="overline">PROJECT HIGHLIGHTS</p>
-              <h3>High-Impact Files Spotlight</h3>
-            </div>
-            <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
-              Ranked from model estimates and static code metrics
-            </span>
-          </div>
-
-          <div className="estimate-note">
-            <strong>How to read these numbers</strong>
-            <span title={CARBON_METHOD_NOTE}>Energy is a relative model score, not metered energy. Carbon is the unweighted estimate from the model score and the selected grid intensity. Project sums assume one run per file, which may not represent how an application is deployed. Grid input ⓘ: {fixed(carbonIntensityToDisplay, 2)} gCO₂eq/kWh · {carbonSourceZone} · {carbonSourceType}. Runtime timing is skipped during concurrent analysis.</span>
-          </div>
-          <div className="top-files-grid">
-            {topEnergyFiles[0] ? (
-              <article className="top-file-card">
-                <span className="top-file-badge energy">
-                  <Flame size={12} /> Highest Energy Demand
-                </span>
-                <h4 title={topEnergyFiles[0].filename}>{topEnergyFiles[0].filename}</h4>
-                <small title={topEnergyFiles[0].relative_path}>{topEnergyFiles[0].relative_path}</small>
-                <div className="stat-val">{fixed(topEnergyFiles[0].energy_joules, 2)}</div>
-                <div className="stat-sub">
-                  Modeled J (relative) · {fixed((topEnergyFiles[0].energy_joules / (projectResult.total_energy_joules || 1)) * 100, 1)}% of the one-run-per-file sum
-                </div>
-              </article>
-            ) : null}
-
-            {topCarbonFiles[0] ? (
-              <article className="top-file-card">
-                <span className="top-file-badge carbon">
-                  <Leaf size={12} /> Highest Modeled Carbon
-                </span>
-                <h4 title={topCarbonFiles[0].filename}>{topCarbonFiles[0].filename}</h4>
-                <small title={topCarbonFiles[0].relative_path}>{topCarbonFiles[0].relative_path}</small>
-                <div className="stat-val" title={CARBON_METHOD_NOTE}>{fixed(topCarbonFiles[0].carbonGrams, 4)}</div>
-                <div className="stat-sub">
-                  Modeled, unweighted gCO₂eq per run · at a single grid intensity, its ranking matches Highest Energy · risk-weighted score {fixed(topCarbonFiles[0].cirs, 6)} (unitless)
-                </div>
-              </article>
-            ) : null}
-
-            {topFindingsFiles[0] ? (
-              <article className="top-file-card">
-                <span className="top-file-badge smells">
-                  <Sparkles size={12} /> Most Rule-Dense File
-                </span>
-                <h4 title={topFindingsFiles[0].filename}>{topFindingsFiles[0].filename}</h4>
-                <small title={topFindingsFiles[0].relative_path}>{topFindingsFiles[0].relative_path}</small>
-                <div className="stat-val">{fixed(topFindingsFiles[0].rule_count, 0)} {topFindingsFiles[0].rule_count === 1 ? 'rule' : 'rules'}</div>
-                <div className="stat-sub">
-                  {fixed(topFindingsFiles[0].findings_count, 0)} finding locations · ESS {fixed(topFindingsFiles[0].ess, 2)} / 10 ({fixed(topFindingsFiles[0].lines_of_code, 0)} SLOC)
-                </div>
-              </article>
-            ) : null}
+        <section className="chart-section overview-section">
+          <div className="chart-section-title"><div><p className="overline">WHERE TO START</p><h3>Three files to understand first <span className="scope-chip">{scopeLabel}</span></h3></div></div>
+          <div className="top-files-grid overview-spotlights">
+            {topEnergyFiles[0] && <article className="top-file-card overview-spotlight-card">
+              <span className="top-file-badge energy"><Flame size={12} /> Biggest energy user</span>
+              <h4 title={topEnergyFiles[0].relative_path}>{uniqueRankedPath(topEnergyFiles[0].relative_path, scopeFiles.map(file => file.relative_path), 46)}</h4>
+              <div className="spotlight-primary">{fixed(topEnergyFiles[0].energy_joules, 2)} <small>modeled J (relative)</small></div>
+              <p>{fixed(scopeMetrics.energyJoules ? topEnergyFiles[0].energy_joules / scopeMetrics.energyJoules * 100 : 0, 1)}% of project modeled energy.</p>
+              <p className="spotlight-secondary" title={CARBON_METHOD_NOTE}>{carbonIntensityToDisplay == null ? 'Carbon unavailable' : `${fixed(topEnergyFiles[0].energy_joules / 3_600_000 * Number(carbonIntensityToDisplay), 5)} gCO₂eq modeled carbon`}</p>
+              <small>Why it matters: reducing repeated work in the largest modeled energy user has the greatest energy impact by file.</small>
+            </article>}
+            {topFindingsFiles[0] && <article className="top-file-card overview-spotlight-card">
+              <span className="top-file-badge smells"><Sparkles size={12} /> Most smell findings</span>
+              <h4 title={topFindingsFiles[0].relative_path}>{uniqueRankedPath(topFindingsFiles[0].relative_path, scopeFiles.map(file => file.relative_path), 46)}</h4>
+              <div className="spotlight-primary">{fixed(topFindingsFiles[0].rule_count, 0)} <small>{topFindingsFiles[0].rule_count === 1 ? 'rule' : 'rules'}</small></div>
+              <p>{fixed(topFindingsFiles[0].findings_count, 0)} finding locations</p>
+              <small>Why it matters: this file contains the most detected locations in the active scope.</small>
+            </article>}
+            {<article className="top-file-card overview-spotlight-card fix-first-card">
+              <span className="top-file-badge smells"><Sparkles size={12} /> Fix this first</span>
+              {fixThisFirstFile ? <><h4 title={fixThisFirstFile.relative_path}>{uniqueRankedPath(fixThisFirstFile.relative_path, getScopeFiles(projectResult.files, true).map(file => file.relative_path), 46)}</h4><div className="spotlight-primary">{fixed(fixThisFirstFile.energy_joules, 2)} <small>modeled J (relative)</small></div><p>{fixed(fixThisFirstFile.findings_count, 0)} finding locations · Source file</p><small>Chosen as the highest modeled-energy source file that has findings; test/example files are excluded from this choice.</small></> : <p>No source file with findings is available in this analysis.</p>}
+            </article>}
           </div>
         </section>
 
-        {/* SECTION 1: ENERGY & CARBON ANALYTICS */}
-        <section className="chart-section">
-          <div className="chart-section-title">
-            <div>
-              <p className="overline">ENERGY & CARBON METRICS BY FILE</p>
-              <h3>Resource & Emissions Breakdown</h3>
-            </div>
-              <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
-              Top 10 of {projectResult.successful_files} successful files · full list below
-            </span>
-          </div>
+        <section className="chart-section overview-section">
+          <div className="chart-section-title"><div><p className="overline">ENERGY HOTSPOTS</p><h3>Top 10 files by modeled energy <span className="scope-chip">{scopeLabel}</span></h3><p className="chart-subtitle" title={CARBON_METHOD_NOTE}>Carbon = energy × grid intensity ({fixed(carbonIntensityToDisplay, 0)} gCO₂eq/kWh, {carbonSourceZone}, {carbonSourceType}).</p></div><span className="scope-caption">Top 10 of {scopeMetrics.successfulFiles} files</span></div>
+          <section className="panel overview-chart-panel">
+            {projectFilesEnergyData.length ? <RankedMetricBars
+              items={projectFilesEnergyData.map(item => ({ ...item, value: item.energyJoules, valueLabel: `${fixed(item.energyJoules, 0)} J · ${fixed(item.energyJoules / 3_600_000 * Number(carbonIntensityToDisplay || 0), 3)} g CO₂` }))}
+              color="#238653" label="Top 10 files by modeled energy" formatValue={value => `${fixed(value, 2)} J`}
+              colorForValue={value => higherIsWorseColor(value, scopeFiles.filter(file => file.status === 'success').map(file => file.energy_joules))}
+            /> : <ChartFallback title="No successful file results" />}
+          </section>
+        </section>
 
-          <div className="chart-grid-2">
-            <section className="panel">
-              <div className="panel-head">
-                <div>
-                  <p className="overline">ENERGY CONSUMPTION</p>
-                  <h3>Relative Energy Score by File</h3>
-                </div>
-                  <span>Modeled J (relative) · one run per file</span>
-              </div>
-              <RankedMetricBars
-                items={projectFilesEnergyData.map(item => ({ name: item.name, relativePath: item.relativePath, value: item.energyJoules }))}
-                color="#2f6b57"
-                label="Top files by estimated energy"
-                formatValue={value => fixed(value, 2)}
-              />
+        <section className="chart-section overview-section">
+          <div className="chart-section-title"><div><p className="overline">SMELL SUMMARY</p><h3>Where the findings come from <span className="scope-chip">{scopeLabel}</span></h3></div></div>
+          <div className="chart-grid-2 overview-smell-grid">
+            <section className="panel overview-chart-panel">
+              <div className="panel-head"><div><h3>Findings by category</h3><p className="chart-subtitle">Where the energy-smell patterns come from.</p></div><span className="scope-chip">{scopeLabel}</span></div>
+              <div className="category-bars">{[...projectCategoryDistribution].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).map(item => {
+                const percentage = projectVisibleFindingCount ? item.count / projectVisibleFindingCount * 100 : 0;
+                return <div className="category-bar-row" key={item.name}><strong>{item.name}</strong><span className="category-bar-track"><span style={{ width: `${Math.max(item.count ? 1 : 0, percentage)}%` }} /></span><span>{item.count} <small>({percentage.toFixed(1)}%)</small></span></div>;
+              })}</div>
             </section>
-
-            <section className="panel">
-              <div className="panel-head">
-                <div>
-                  <p className="overline">CARBON FOOTPRINT ESTIMATE</p>
-                  <h3>Unweighted modeled carbon by file</h3>
-                </div>
-                  <span title={CARBON_METHOD_NOTE}>{fixed(carbonIntensityToDisplay, 1)} gCO₂eq/kWh ⓘ · {carbonSourceZone} · {carbonSourceType}</span>
-              </div>
-              <RankedMetricBars
-                items={projectFilesCarbonData.map(item => ({ name: item.name, relativePath: item.relativePath, value: item.carbonGrams }))}
-                color="#c38c3d"
-                label="Top files by estimated carbon footprint"
-                formatValue={value => `${fixed(value, 5)} g`}
-                valueHelp={CARBON_METHOD_NOTE}
-              />
+            <section className="panel overview-chart-panel">
+              <div className="panel-head"><div><h3>ESS distribution <span className="scope-chip">{scopeLabel}</span></h3><p className="chart-subtitle">Display bands only; these are not model outputs.</p></div><span>{scopeMetrics.successfulFiles} files</span></div>
+              {(() => {
+                const total = scopeMetrics.successfulFiles || 1;
+                return <>
+                  <div className="ess-stacked-bar" aria-label="ESS display bands">
+                    {projectEssBands.map(band => <div key={band.label} className={`ess-segment ess-${band.label.toLowerCase()}`} style={{ width: `${band.count / total * 100}%` }} title={`${band.label}: ${band.count} files`} />)}
+                  </div>
+                  <p className="ess-band-summary">{projectEssBands.map(band => `${band.count} ${band.label.toLowerCase()}${band.count === 1 ? ' file' : ' files'} · ${(band.count / total * 100).toFixed(1)}%`).join(' · ')}</p>
+                  <p className="ess-concentration">Most smell findings appear in {scopeMetrics.filesWithFindings} files.</p>
+                  <p className="ess-band-legend"><span className="ess-low-key">Low 0–&lt;3</span><span className="ess-medium-key">Medium 3–&lt;7</span><span className="ess-high-key">High 7–10</span><span>Display bands, not model outputs.</span></p>
+                  <details className="fine-ess-distribution"><summary>Show detailed distribution</summary>
+                    <div className="chart" style={{ marginTop: '14px' }}><ResponsiveContainer width="100%" height={220}><BarChart data={projectEssDistribution} margin={{ top: 8, right: 12, left: 12, bottom: 20 }}>
+                      <CartesianGrid vertical={false} stroke="var(--line)" /><XAxis dataKey="label" tick={{ fontSize: 11 }} label={{ value: 'ESS range', position: 'insideBottom', offset: -7, fontSize: 10 }} /><YAxis allowDecimals={false} tick={{ fontSize: 11 }} label={{ value: 'Number of files', angle: -90, position: 'insideLeft', fontSize: 10 }} /><Tooltip formatter={(value: any) => [`${value} files`, 'Count']} /><Bar dataKey="count" name="Files" fill="#2e6956" radius={[4, 4, 0, 0]} />
+                    </BarChart></ResponsiveContainer></div>
+                  </details>
+                </>;
+              })()}
             </section>
           </div>
         </section>
 
-        {/* SECTION 2: CODE QUALITY & SUSTAINABILITY SCORES */}
-        <section className="chart-section">
-          <div className="chart-section-title">
-            <div>
-              <p className="overline">CODE QUALITY & SUSTAINABILITY INDEXES</p>
-              <h3>SCI, ESS & CIRS Metrics across Files</h3>
+        <section className="chart-section overview-section">
+          <div className="chart-section-title"><div><p className="overline">FILE METRICS</p><h3>Compare file scores <span className="scope-chip">{scopeLabel}</span></h3></div><span className="scope-caption">Green = good · amber = medium · red = high</span></div>
+          <section className="panel overview-chart-panel">
+            <div className="metric-chart-tabs" role="tablist" aria-label="File metric chart">
+              <button role="tab" aria-selected={projectMetricTab === 'complexity'} className={projectMetricTab === 'complexity' ? 'active' : ''} onClick={() => setProjectMetricTab('complexity')}>Complexity</button>
+              <button role="tab" aria-selected={projectMetricTab === 'ess'} className={projectMetricTab === 'ess' ? 'active' : ''} onClick={() => setProjectMetricTab('ess')}>Energy smells</button>
+              <button role="tab" aria-selected={projectMetricTab === 'cirs'} className={projectMetricTab === 'cirs' ? 'active' : ''} onClick={() => setProjectMetricTab('cirs')}>Risk</button>
             </div>
-            <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
-              Top 10 files · sorted highest first
-            </span>
-          </div>
-
-          <div className="chart-grid-3">
-            <section className="panel">
-              <div className="panel-head">
-                <div>
-                  <p className="overline">STRUCTURAL COMPLEXITY</p>
-                  <h3>SCI by File</h3>
-                </div>
-                  <span>Lower is simpler</span>
-              </div>
-              <RankedMetricBars
-                items={projectFilesSciData.map(item => ({ name: item.name, relativePath: item.relativePath, value: item.sci }))}
-                color="#2e6956"
-                label="Top files by structural complexity"
-                formatValue={value => fixed(value, 3)}
-              />
-            </section>
-
-            <section className="panel">
-              <div className="panel-head">
-                <div>
-                  <p className="overline">ENERGY SMELL SCORE</p>
-                  <h3>ESS by File</h3>
-                </div>
-                  <span>Lower is better</span>
-              </div>
-              <RankedMetricBars
-                items={projectFilesEssData.map(item => ({ name: item.name, relativePath: item.relativePath, value: item.ess }))}
-                color="#f59e0b"
-                label="Top files by energy smell score"
-                formatValue={value => `${fixed(value, 1)} / 10`}
-              />
-            </section>
-
-            <section className="panel">
-              <div className="panel-head">
-                <div>
-                  <p className="overline">RISK-WEIGHTED SCORE</p>
-                  <h3>CIRS research score by file</h3>
-                </div>
-                  <span>Unitless · higher is riskier</span>
-              </div>
-              <RankedMetricBars
-                items={projectFilesCirsData.map(item => ({ name: item.name, relativePath: item.relativePath, value: item.cirs }))}
-                color="#64748b"
-                label="Top files by carbon impact risk score"
-                formatValue={value => fixed(value, 6)}
-              />
-            </section>
-          </div>
+            <p className="chart-subtitle">{projectMetricTab === 'complexity' ? 'SCI measures structural complexity (0–1); lower is simpler and better.' : projectMetricTab === 'ess' ? 'How many energy-wasting patterns a file contains (0–10, lower is better).' : 'CIRS is a unitless modeled risk score; lower is better.'}</p>
+            {projectMetricTab === 'ess' && <p className="metric-band-note">ESS display bands: 0–&lt;3 low · 3–&lt;7 medium · 7–10 high. These are display bands, not model outputs.</p>}
+            {projectMetricTab === 'complexity' ? <RankedMetricBars items={projectFilesSciData.map(item => ({ name: item.name, relativePath: item.relativePath, value: item.sci }))} color="#238653" label="Top files by structural complexity" formatValue={value => fixed(value, 3)} colorForValue={value => higherIsWorseColor(value, scopeFiles.map(file => file.sci))} />
+              : projectMetricTab === 'ess' ? <RankedMetricBars items={projectFilesEssData.map(item => ({ name: item.name, relativePath: item.relativePath, value: item.ess }))} color="#238653" label="Top files by ESS" formatValue={value => `${fixed(value, 1)} / 10`} colorForValue={value => value < 3 ? '#238653' : value < 7 ? '#c58a16' : '#c5483c'} />
+                : <RankedMetricBars items={projectFilesCirsData.map(item => ({ name: item.name, relativePath: item.relativePath, value: item.cirs }))} color="#238653" label="Top files by CIRS" formatValue={value => fixed(value, 6)} colorForValue={value => higherIsWorseColor(value, scopeFiles.map(file => file.cirs))} />}
+          </section>
         </section>
 
-        {/* SECTION 3: FINDINGS BY CATEGORY */}
-        <section className="chart-section">
-          <div className="chart-section-title">
-            <div>
-              <p className="overline">ENERGY SMELL AUDIT</p>
-              <h3>Findings by Category</h3>
-            </div>
-            <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
-              {fixed(projectVisibleRuleCount, 0)} per-file rule instances · {fixed(projectVisibleFindingCount, 0)} finding locations · test/example code {excludeTestCode ? 'excluded' : 'included'}
-            </span>
-          </div>
-
-          <div className="chart-grid-2">
-            <section className="panel">
-              <div className="panel-head">
-                <div>
-                  <p className="overline">FINDINGS CATEGORIES</p>
-                  <h3>Smells Distribution by Category</h3>
-                </div>
-                <span>{projectCategoryDistributionData.length} categories active</span>
-              </div>
-              {projectCategoryDistributionData.length > 0 ? (
-                <div className="chart" style={{ marginTop: '14px' }}>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <PieChart>
-                      <Pie
-                        data={projectCategoryDistributionData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={55}
-                        outerRadius={85}
-                        paddingAngle={0}
-                        minAngle={2}
-                        dataKey="count"
-                        nameKey="name"
-                      >
-                        {projectCategoryDistributionData.map((entry, index) => (
-                          <Cell key={`cat-${index}`} fill={CATEGORY_COLORS[entry.name] || '#2e6956'} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(val: any, name: any) => { const total = projectCategoryDistributionData.reduce((sum, entry) => sum + entry.count, 0); const count = Number(val || 0); return [`${count} finding${count === 1 ? '' : 's'} · ${total ? (count / total * 100).toFixed(1) : '0.0'}%`, name]; }} />
-                      <Legend verticalAlign="bottom" height={36} iconType="circle" />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <ChartFallback title="No data available for this visualization" message="No findings were reported for any of the categories." />
-              )}
-            </section>
-            <section className="panel">
-              <div className="panel-head">
-                <div>
-                  <p className="overline">PER-FILE DISTRIBUTION</p>
-                  <h3>ESS score distribution</h3>
-                </div>
-                <span>{projectResult.successful_files} successful files · scale 0–10</span>
-              </div>
-              {projectEssDistribution.length ? (
-                <div className="chart" style={{ marginTop: '14px' }}>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <BarChart data={projectEssDistribution} margin={{ top: 8, right: 12, left: 12, bottom: 18 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e4e2dc" />
-                      <XAxis dataKey="label" tick={{ fontSize: 11 }} label={{ value: 'ESS score range', position: 'insideBottom', offset: -7 }} />
-                      <YAxis allowDecimals={false} tick={{ fontSize: 11 }} label={{ value: 'Number of files', angle: -90, position: 'insideLeft' }} />
-                      <Tooltip formatter={(value: any) => [`${value} file(s)`, 'Count']} />
-                      <Bar dataKey="count" name="Files" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : <ChartFallback title="No ESS scores available" />}
-            </section>
-          </div>
-        </section>
-
-        <section className="panel project-files-panel" style={{ marginTop: '24px' }}>
+        <section className="panel project-files-panel overview-section">
           <div className="panel-head" style={{ alignItems: 'center' }}>
-            <div>
-              <p className="overline">PROJECT FILE DRILLDOWN</p>
-              <h3>Analyzed Source Files ({fixed(sortedProjectFiles.length, 0)} shown · {fixed(projectResult.successful_files, 0)} succeeded · {fixed(projectResult.error_files, 0)} failed)</h3>
-            </div>
+            <div><p className="overline">FILE DRILLDOWN · <span className="scope-chip">{scopeLabel}</span></p><h3>Analyzed files ({fixed(sortedProjectFiles.length, 0)} shown · {scopeMetrics.successfulFiles} succeeded · {scopeMetrics.failedFiles} failed)</h3></div>
             <div className="file-table-controls">
-              <label className="search-field" style={{ width: '220px', height: '36px' }}>
-                <Search size={14} />
-                <input value={tableSearch} onChange={e => setTableSearch(e.target.value)} placeholder="Search file or folder…" />
-              </label>
-              <select aria-label="Filter files by analysis status" value={fileStatusFilter} onChange={e => setFileStatusFilter(e.target.value as 'all' | 'success' | 'error')}>
-                <option value="all">All statuses</option>
-                <option value="success">Successful</option>
-                <option value="error">Failed</option>
-              </select>
+              <label className="search-field" style={{ width: '220px', height: '36px' }}><Search size={14} /><input value={tableSearch} onChange={event => setTableSearch(event.target.value)} placeholder="Search file or folder…" /></label>
+              <select aria-label="Filter files by analysis status" value={fileStatusFilter} onChange={event => setFileStatusFilter(event.target.value as 'all' | 'success' | 'error')}><option value="all">All statuses</option><option value="success">Successful</option><option value="error">Failed</option></select>
             </div>
           </div>
-
-          <p className="soft-copy" style={{ margin: '0 16px 10px' }}>Static analysis only; code is not executed.</p>
-          <div className="project-table-wrap">
-            <table className="project-table">
-              <thead>
-                <tr>
-                  <th onClick={() => { if (sortColumn === 'filename') setSortAsc(!sortAsc); else { setSortColumn('filename'); setSortAsc(true); } }} style={{ cursor: 'pointer' }}>
-                    File Name {sortColumn === 'filename' ? (sortAsc ? '▲' : '▼') : ''}
-                  </th>
-                  <th onClick={() => { if (sortColumn === 'lines_of_code') setSortAsc(!sortAsc); else { setSortColumn('lines_of_code'); setSortAsc(false); } }} style={{ cursor: 'pointer' }}>
-                    SLOC {sortColumn === 'lines_of_code' ? (sortAsc ? '▲' : '▼') : ''}
-                  </th>
-                  <th>Status</th>
-                  <th onClick={() => { if (sortColumn === 'findings_count') setSortAsc(!sortAsc); else { setSortColumn('findings_count'); setSortAsc(false); } }} style={{ cursor: 'pointer' }}>
-                    Rules · locations {sortColumn === 'findings_count' ? (sortAsc ? '▲' : '▼') : ''}
-                  </th>
-                  <th onClick={() => { if (sortColumn === 'sci') setSortAsc(!sortAsc); else { setSortColumn('sci'); setSortAsc(false); } }} style={{ cursor: 'pointer' }}>
-                    SCI {sortColumn === 'sci' ? (sortAsc ? '▲' : '▼') : ''}
-                  </th>
-                  <th onClick={() => { if (sortColumn === 'ess') setSortAsc(!sortAsc); else { setSortColumn('ess'); setSortAsc(false); } }} style={{ cursor: 'pointer' }}>
-                    ESS {sortColumn === 'ess' ? (sortAsc ? '▲' : '▼') : ''}
-                  </th>
-                  <th onClick={() => { if (sortColumn === 'cirs') setSortAsc(!sortAsc); else { setSortColumn('cirs'); setSortAsc(false); } }} style={{ cursor: 'pointer' }}>
-                    Risk score {sortColumn === 'cirs' ? (sortAsc ? '▲' : '▼') : ''}
-                  </th>
-                  <th onClick={() => { if (sortColumn === 'energy_joules') setSortAsc(!sortAsc); else { setSortColumn('energy_joules'); setSortAsc(false); } }} style={{ cursor: 'pointer' }}>
-                    Modeled J (relative) {sortColumn === 'energy_joules' ? (sortAsc ? '▲' : '▼') : ''}
-                  </th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedProjectFiles.length === 0 && (
-                  <tr><td colSpan={9} className="empty-table-message">No files match the current search and status filter.</td></tr>
-                )}
-                {sortedProjectFiles.map((fileItem: any) => (
-                  <tr key={fileItem.relative_path} className={fileItem.status === 'error' ? 'row-error' : ''}>
-                    <td>
-                      <div className="file-name-cell">
-                        <FileCode2 size={16} />
-                        <div>
-                          <strong>{fileItem.filename}{isTestOrExamplePath(fileItem.relative_path) ? ' · Test code' : ''}</strong>
-                          <small>{fileItem.relative_path}</small>
-                        </div>
-                      </div>
-                    </td>
-                    <td>{fileItem.lines_of_code}</td>
-                    <td>
-                      <span className={`status-badge ${fileItem.status}`}>{fileItem.status === 'error' ? 'Failed' : 'Successful'}</span>
-                      {fileItem.status === 'error' && <small className="file-error-reason">{fileItem.error_message || 'Analysis could not be completed.'}</small>}
-                    </td>
-                    <td>{fileItem.status === 'success' ? <span className={`findings-badge ${fileItem.findings_count > 0 ? 'has-findings' : ''}`}>{fixed(fileItem.rule_count, 0)} {fileItem.rule_count === 1 ? 'rule' : 'rules'} · {fixed(fileItem.findings_count, 0)} locations</span> : '—'}</td>
-                    <td>{fileItem.status === 'success' ? fixed(fileItem.sci, 4) : '—'}</td>
-                    <td>{fileItem.status === 'success' ? fixed(fileItem.ess, 2) : '—'}</td>
-                    <td>{fileItem.status === 'success' ? fixed(fileItem.cirs, 6) : '—'}</td>
-                    <td>{fileItem.status === 'success' ? fixed(fileItem.energy_joules, 3) : '—'}</td>
-                    <td>
-                      {fileItem.single_file_response && (
-                        <button className="small-button inspect-file-btn" onClick={() => {
-                          setResult(fileItem.single_file_response);
-                          setFilename(fileItem.filename);
-                          if (fileItem.original_code) setCode(fileItem.original_code);
-                          setAnalysisMode('file');
-                          navigateView('results');
-                        }}>
-                          Inspect <ArrowRight size={13} />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <p className="soft-copy static-analysis-note">Static analysis only; code is not executed.</p>
+          <div className="project-table-wrap"><table className="project-table compact-project-table">
+            <thead><tr>
+              <th onClick={() => { if (sortColumn === 'filename') setSortAsc(!sortAsc); else { setSortColumn('filename'); setSortAsc(true); } }}>File</th>
+              <th onClick={() => { if (sortColumn === 'energy_joules') setSortAsc(!sortAsc); else { setSortColumn('energy_joules'); setSortAsc(false); } }}>Modeled J {sortColumn === 'energy_joules' ? (sortAsc ? '▲' : '▼') : ''}</th>
+              <th onClick={() => { if (sortColumn === 'findings_count') setSortAsc(!sortAsc); else { setSortColumn('findings_count'); setSortAsc(false); } }}>Rules · locations</th>
+              <th>Status</th>
+              <th onClick={() => { if (sortColumn === 'sci') setSortAsc(!sortAsc); else { setSortColumn('sci'); setSortAsc(false); } }}>SCI</th>
+              <th onClick={() => { if (sortColumn === 'ess') setSortAsc(!sortAsc); else { setSortColumn('ess'); setSortAsc(false); } }}>ESS</th>
+              <th onClick={() => { if (sortColumn === 'cirs') setSortAsc(!sortAsc); else { setSortColumn('cirs'); setSortAsc(false); } }}>CIRS</th>
+              <th onClick={() => { if (sortColumn === 'lines_of_code') setSortAsc(!sortAsc); else { setSortColumn('lines_of_code'); setSortAsc(false); } }}>SLOC</th>
+              <th>Actions</th>
+            </tr></thead>
+            <tbody>
+              {sortedProjectFiles.length === 0 && <tr><td colSpan={9} className="empty-table-message">No files match the current search and status filter.</td></tr>}
+              {sortedProjectFiles.map((fileItem: any) => <tr key={fileItem.relative_path} className={fileItem.status === 'error' ? 'row-error' : ''}>
+                <td><div className="file-name-cell"><FileCode2 size={15} /><div className="compact-file-label"><strong title={fileItem.relative_path}>{fileItem.filename}</strong><small title={fileItem.relative_path}>{fileItem.relative_path.replace(/\\/g, '/').split('/').slice(-2, -1)[0] || 'root'}</small><span className={`file-scope-chip ${isTestOrExamplePath(fileItem.relative_path) ? 'is-test' : 'is-source'}`}>{isTestOrExamplePath(fileItem.relative_path) ? 'test' : 'source'}</span></div></div></td>
+                <td>{fileItem.status === 'success' ? fixed(fileItem.energy_joules, 2) : '—'}</td>
+                <td>{fileItem.status === 'success' ? <span className="findings-badge">{fixed(fileItem.rule_count, 0)} {fileItem.rule_count === 1 ? 'rule' : 'rules'} · {fixed(fileItem.findings_count, 0)} {fileItem.findings_count === 1 ? 'location' : 'locations'}</span> : '—'}</td>
+                <td><span className={`status-badge ${fileItem.status}`}>{fileItem.status === 'error' ? 'Failed' : 'Successful'}</span></td>
+                <td>{fileItem.status === 'success' ? fixed(fileItem.sci, 4) : '—'}</td>
+                <td>{fileItem.status === 'success' ? <span className={`ess-pill ${fileItem.ess < 3 ? 'ess-low' : fileItem.ess < 7 ? 'ess-medium' : 'ess-high'}`}>{fixed(fileItem.ess, 2)}</span> : '—'}</td>
+                <td>{fileItem.status === 'success' ? fixed(fileItem.cirs, 6) : '—'}</td><td>{fileItem.status === 'success' ? fixed(fileItem.lines_of_code, 0) : '—'}</td>
+                <td>{fileItem.single_file_response && <button className="small-button inspect-file-btn" onClick={() => { setResult(fileItem.single_file_response); setFilename(fileItem.filename); if (fileItem.original_code) setCode(fileItem.original_code); setAnalysisMode('file'); navigateView('results'); }}>Inspect <ArrowRight size={13} /></button>}</td>
+              </tr>)}
+            </tbody>
+          </table></div>
         </section>
       </section>}
 
@@ -2520,8 +2267,8 @@ export default function App() {
   </div>;
 }
 
-function Metric({ label, metric, unit, tone, help }: { label: string; metric: string; unit: string; tone: string; help?: string }) {
-  return <article className={`metric ${tone}`}><p>{label}{help && <abbr className="metric-help" title={help} aria-label={help}>ⓘ</abbr>}</p><strong>{metric}</strong>{unit && <span>{unit}</span>}</article>;
+function Metric({ label, metric, unit, tone, help, scopeLabel }: { label: string; metric: string; unit: string; tone: string; help?: string; scopeLabel?: string }) {
+  return <article className={`metric ${tone}`}><p>{label}{help && <abbr className="metric-help" title={help} aria-label={help}>ⓘ</abbr>}{scopeLabel && <small className="scope-chip">{scopeLabel}</small>}</p><strong>{metric}</strong>{unit && <span>{unit}</span>}</article>;
 }
 function formatWindowTime(isoStr?: string): string {
   if (!isoStr) return '—';
