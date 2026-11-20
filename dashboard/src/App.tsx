@@ -64,6 +64,10 @@ function ruleExampleReplacement(example?: string | null): string | undefined {
   return example.slice(afterMarker.index + afterMarker[0].length).trim() || undefined;
 }
 
+function isTestOrExamplePath(path: string): boolean {
+  return /(?:^|\/)(?:tests?|examples?)(?:\/|$)|(?:^|\/)test_[^/]*$/i.test(path.replace(/\\/g, '/'));
+}
+
 function PythonCodeBlock({ code, startLine = 1 }: { code: string; startLine?: number }) {
   const tokenPattern = /(#.*$|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*\b)/g;
   return (
@@ -108,7 +112,7 @@ function CopyCodeButton({ code, label = 'Copy code' }: { code: string; label?: s
   return <button className="copy-code-button" type="button" onClick={copy}><Copy size={13} />{copied ? 'Copied' : label}</button>;
 }
 
-function CodeChangesSection({ filename, sourceCode, optimizedCode, findings, autoFixes = [], manualFixes = [], recommendations = [] }: {
+function CodeChangesSection({ filename, sourceCode, optimizedCode, findings, autoFixes = [], manualFixes = [], recommendations = [], shownGenericPatterns }: {
   filename: string;
   sourceCode: string;
   optimizedCode?: string;
@@ -116,6 +120,7 @@ function CodeChangesSection({ filename, sourceCode, optimizedCode, findings, aut
   autoFixes?: any[];
   manualFixes?: any[];
   recommendations?: any[];
+  shownGenericPatterns?: Set<string>;
 }) {
   const [showModifiedCode, setShowModifiedCode] = useState(false);
   const sourceLines = sourceCode.split(/\r?\n/);
@@ -138,12 +143,13 @@ function CodeChangesSection({ filename, sourceCode, optimizedCode, findings, aut
           || (Number.isInteger(lineStart) ? sourceLines.slice(lineStart - 1, lineEnd).join('\n') : '');
         const verifiedReplacement = autoFix?.replacement_code as string | undefined;
         const exampleReplacement = ruleExampleReplacement(recommendation?.code_example);
-        const replacementCode = verifiedReplacement || exampleReplacement;
         const verified = Boolean(autoFix?.is_auto_applied && verifiedReplacement && optimizedCode && optimizedCode !== sourceCode);
+        const showGenericPattern = Boolean(exampleReplacement && !verifiedReplacement && !shownGenericPatterns?.has(exampleReplacement));
+        if (showGenericPattern && exampleReplacement) shownGenericPatterns?.add(exampleReplacement);
         return (
           <details className="code-change-item" key={`${finding.rule_id}-${finding.line_number}-${index}`} open>
             <summary>
-              <span><strong>{finding.message || recommendation?.title || finding.rule_id}</strong><small>{finding.rule_id} · {filename} · {lineStart == null ? 'Line unavailable' : lineStart === lineEnd ? `Line ${lineStart}` : `Lines ${lineStart}–${lineEnd}`}</small></span>
+              <span><strong>{finding.message || recommendation?.title || finding.rule_id}</strong><small>{finding.rule_id} · {filename} · {isTestOrExamplePath(filename) ? 'Test code · ' : ''}{lineStart == null ? 'Line unavailable' : lineStart === lineEnd ? `Line ${lineStart}` : `Lines ${lineStart}–${lineEnd}`}</small></span>
               <ChevronDown size={16} />
             </summary>
             <div className="code-change-content">
@@ -153,11 +159,11 @@ function CodeChangesSection({ filename, sourceCode, optimizedCode, findings, aut
                   {originalCode ? <PythonCodeBlock code={originalCode} startLine={lineStart ?? 1} /> : <p className="code-unavailable">Source unavailable. Re-run analysis.</p>}
                 </section>
                 <section>
-                  <div className="code-block-heading"><strong>Suggested replacement</strong>{exampleReplacement && !verifiedReplacement && <small>Rule example</small>}{replacementCode && <CopyCodeButton code={replacementCode} label="Copy replacement" />}</div>
-                  {replacementCode ? <PythonCodeBlock code={replacementCode} startLine={lineStart ?? 1} /> : <p className="code-unavailable">No replacement code available.</p>}
-                  {verified && <button className="apply-code-button" type="button" onClick={() => setShowModifiedCode(true)}>Apply verified fixes to preview</button>}
+                  <div className="code-block-heading"><strong>{verified ? 'Auto-applied fix' : 'Verified replacement'}</strong>{verifiedReplacement && <CopyCodeButton code={verifiedReplacement} label="Copy fix" />}</div>
+                  {verified ? <><PythonCodeBlock code={verifiedReplacement!} startLine={lineStart ?? 1} /><button className="apply-code-button" type="button" onClick={() => setShowModifiedCode(true)}>Apply verified fixes to preview</button></> : <p className="code-unavailable">No automatic fix was applied to this finding.</p>}
                 </section>
               </div>
+              {showGenericPattern && exampleReplacement && <section className="generic-rule-pattern"><div className="code-block-heading"><strong>Generic pattern for this rule, not auto-generated for your code</strong><CopyCodeButton code={exampleReplacement} label="Copy generic pattern" /></div><PythonCodeBlock code={exampleReplacement} startLine={lineStart ?? 1} /></section>}
             </div>
           </details>
         );
@@ -184,6 +190,10 @@ function ProjectCodeChangesSection({ projectResult, projectFiles, projectZipFile
   const filesWithFindings = projectResult.files.filter(file =>
     file.status === 'success' && file.single_file_response?.pipeline_raw?.energy_smell_report?.findings?.length
   );
+  const [excludeTestCode, setExcludeTestCode] = useState(true);
+  const shownGenericPatterns = new Set<string>();
+  const visibleFilesWithFindings = filesWithFindings.filter(file => !excludeTestCode || !isTestOrExamplePath(file.relative_path));
+  const visibleFindingCount = visibleFilesWithFindings.reduce((sum, file) => sum + (file.single_file_response?.pipeline_raw?.energy_smell_report?.findings?.length || 0), 0);
   useEffect(() => {
     let cancelled = false;
     const normalizePath = (value: string) => value.replace(/\\/g, '/').replace(/^\.\//, '');
@@ -221,11 +231,12 @@ function ProjectCodeChangesSection({ projectResult, projectFiles, projectZipFile
     <section className="panel suggested-code-section">
       <div className="panel-head">
         <div><p className="overline">ISSUE-BY-ISSUE FIXES</p><h3>Suggested Code Changes</h3></div>
-        <span>{projectResult.total_findings} detected issue(s)</span>
+        <span>{visibleFindingCount} finding location{visibleFindingCount === 1 ? '' : 's'} shown</span>
       </div>
-      {filesWithFindings.length ? (
+      <label className="test-code-toggle"><input type="checkbox" checked={excludeTestCode} onChange={event => setExcludeTestCode(event.target.checked)} /> Exclude test/example code from totals <strong>{excludeTestCode ? 'On' : 'Off'}</strong> · {filesWithFindings.filter(file => isTestOrExamplePath(file.relative_path)).length} test/example file(s)</label>
+      {visibleFilesWithFindings.length ? (
         <div className="suggested-code-files">
-          {filesWithFindings.map(fileItem => {
+          {visibleFilesWithFindings.map(fileItem => {
             const fileResponse = fileItem.single_file_response!;
             const fileFindings = fileResponse.pipeline_raw?.energy_smell_report?.findings || [];
             const fileRecommendations = Array.isArray(fileResponse.recommendations)
@@ -241,6 +252,7 @@ function ProjectCodeChangesSection({ projectResult, projectFiles, projectZipFile
                 autoFixes={fileResponse.auto_applied_fixes || []}
                 manualFixes={fileResponse.manual_fixes || []}
                 recommendations={fileRecommendations}
+                shownGenericPatterns={shownGenericPatterns}
               />
             );
           })}
@@ -2052,6 +2064,7 @@ export default function App() {
                 autoFixes={result.auto_applied_fixes || []}
                 manualFixes={result.manual_fixes || []}
                 recommendations={recommendations}
+                shownGenericPatterns={new Set<string>()}
               />
             </section>
           </section>

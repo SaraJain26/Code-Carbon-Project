@@ -296,6 +296,9 @@ body { font-family:'Manrope', Arial, sans-serif; letter-spacing:-.12px; }
 .code-change-item > summary small { color: var(--muted); font: 10px 'DM Mono', monospace; overflow-wrap: anywhere; }
 .code-change-item[open] > summary { border-bottom: 1px solid var(--line); }
 .code-change-content { padding: 13px 14px 15px; }
+.generic-rule-pattern { margin-top: 12px; padding: 12px; border: 1px dashed var(--forest); border-radius: 8px; background: var(--paper); }
+.test-code-toggle { display: inline-flex; align-items: center; gap: 8px; padding: 9px 12px; margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font-size: 12px; }
+.test-code-toggle input { accent-color: var(--forest); }
 .code-change-explanation { margin: 0 0 13px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .code-change-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .code-block-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 6px; color: var(--ink); font-size: 12px; }
