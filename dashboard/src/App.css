@@ -245,6 +245,15 @@ body { font-family:'Manrope', Arial, sans-serif; letter-spacing:-.12px; }
 .dark-theme .estimate-note { background: #1c2b25; border-color: #40594d; color: var(--ink); }
 .file-table-controls { display: flex; gap: 8px; align-items: center; }
 .file-table-controls select { height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--card); color: var(--ink); font: inherit; font-size: 12px; }
+.impact-status-filters { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 16px 12px; }
+.status-filter-chip { border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; background: var(--paper); color: var(--ink); font: inherit; font-size: 11px; cursor: pointer; }
+.status-filter-chip span { margin-left: 4px; color: var(--muted); font: 10px 'DM Mono', monospace; }
+.status-filter-chip.active { border-color: var(--forest); background: var(--forest); color: #fff; }
+.status-filter-chip.active span { color: #e2eee7; }
+.impact-reason-groups { margin: 0 16px 12px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); font-size: 11px; }
+.impact-reason-groups summary { cursor: pointer; font-weight: 700; }
+.impact-reason-groups ul { display: grid; gap: 8px; margin: 10px 0 2px; padding-left: 18px; }
+.impact-reason-groups li small { display: block; margin-top: 3px; color: var(--muted); }
 .file-error-reason { display: block; max-width: 260px; margin-top: 5px; color: #a23c32; font-size: 11px; line-height: 1.4; white-space: normal; }
 .empty-table-message { padding: 24px !important; color: var(--muted); text-align: center; }
 .dark-theme .file-error-reason { color: #ff9c8c; }

@@ -68,6 +68,18 @@ function isTestOrExamplePath(path: string): boolean {
   return /(?:^|\/)(?:tests?|examples?)(?:\/|$)|(?:^|\/)test_[^/]*$/i.test(path.replace(/\\/g, '/'));
 }
 
+function projectFixState(file: ProjectFileResult): 'applied' | 'rejected' | 'not_auto_fixable' | 'no_issues' | 'failed' {
+  if (file.status === 'error') return 'failed';
+  if (file.findings_count === 0) return 'no_issues';
+  if (file.fix_status === 'applied') return 'applied';
+  if (file.fix_status?.startsWith('rejected')) return 'rejected';
+  return 'not_auto_fixable';
+}
+
+const fixStateLabels: Record<string, string> = {
+  applied: 'Applied', rejected: 'Rejected', not_auto_fixable: 'Not auto-fixable', no_issues: 'No issues found', failed: 'Analysis failed'
+};
+
 function PythonCodeBlock({ code, startLine = 1 }: { code: string; startLine?: number }) {
   const tokenPattern = /(#.*$|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*\b)/g;
   return (
@@ -502,6 +514,7 @@ export default function App() {
 
   const [tableSearch, setTableSearch] = useState('');
   const [fileStatusFilter, setFileStatusFilter] = useState<'all' | 'success' | 'error'>('all');
+  const [impactStatusFilter, setImpactStatusFilter] = useState<'all' | 'applied' | 'rejected' | 'not_auto_fixable' | 'no_issues'>('all');
   const [sortColumn, setSortColumn] = useState<'filename' | 'lines_of_code' | 'findings_count' | 'sci' | 'ess' | 'cirs' | 'energy_joules'>('findings_count');
   const [sortAsc, setSortAsc] = useState(false);
 
@@ -870,6 +883,32 @@ export default function App() {
         return sortAsc ? (valA as number) - (valB as number) : (valB as number) - (valA as number);
       });
   }, [projectResult, tableSearch, fileStatusFilter, sortColumn, sortAsc]);
+
+  const impactStatusCounts = useMemo(() => {
+    const counts: Record<string, number> = { applied: 0, rejected: 0, not_auto_fixable: 0, no_issues: 0 };
+    for (const file of projectResult?.files ?? []) {
+      const state = projectFixState(file);
+      if (state in counts) counts[state] += 1;
+    }
+    return counts;
+  }, [projectResult]);
+  const impactReasonGroups = useMemo(() => {
+    const groups = new Map<string, string[]>();
+    for (const file of projectResult?.files ?? []) {
+      const state = projectFixState(file);
+      if (state !== 'rejected' && state !== 'not_auto_fixable') continue;
+      const reason = file.fix_reason || (state === 'not_auto_fixable' ? 'No safe automatic AST transformation was available for this file.' : 'Candidate was rejected by the modeled quality gate.');
+      groups.set(reason, [...(groups.get(reason) || []), file.relative_path]);
+    }
+    return Array.from(groups.entries());
+  }, [projectResult]);
+  const impactFilesSorted = useMemo(() => {
+    const statusOrder: Record<string, number> = { applied: 0, rejected: 1, not_auto_fixable: 2, no_issues: 3, failed: 4 };
+    return (projectResult?.files ?? [])
+      .filter(file => impactStatusFilter === 'all' || projectFixState(file) === impactStatusFilter)
+      .slice()
+      .sort((a, b) => statusOrder[projectFixState(a)] - statusOrder[projectFixState(b)] || a.relative_path.localeCompare(b.relative_path));
+  }, [projectResult, impactStatusFilter]);
 
   const readFile = async (file: File) => {
     setNotice(null);
@@ -2120,9 +2159,17 @@ export default function App() {
               <div className="panel-head">
                 <div>
                   <p className="overline">PER-FILE MODELED COMPARISON</p>
-                  <h3>Estimated before and after · {projectResult?.files?.length ?? 0} files</h3>
+                  <h3>Estimated before and after · {impactFilesSorted.length} files shown</h3>
                 </div>
               </div>
+              <div className="impact-status-filters" aria-label="Filter files by fix status">
+                {(['all', 'applied', 'rejected', 'not_auto_fixable', 'no_issues'] as const).map(state => {
+                  const count = state === 'all' ? (projectResult?.files?.length ?? 0) : impactStatusCounts[state];
+                  const label = state === 'all' ? 'All' : fixStateLabels[state];
+                  return <button type="button" key={state} className={`status-filter-chip ${impactStatusFilter === state ? 'active' : ''}`} onClick={() => setImpactStatusFilter(state)}>{label} <span>{count}</span></button>;
+                })}
+              </div>
+              {impactReasonGroups.length > 0 && <details className="impact-reason-groups"><summary>Grouped fix reasons ({impactReasonGroups.length} distinct)</summary><ul>{impactReasonGroups.map(([reason, files]) => <li key={reason}><strong>{files.length} file{files.length === 1 ? '' : 's'}:</strong> {reason}<small>{files.join(', ')}</small></li>)}</ul></details>}
               <div className="project-table-wrap">
                 <table className="project-table">
                   <thead>
@@ -2137,18 +2184,21 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(projectResult?.files ?? []).map((fileItem: ProjectFileResult, idx: number) => {
+                    {impactFilesSorted.map((fileItem: ProjectFileResult) => {
                       const post = fileItem.single_file_response?.post_refactor_estimation || {};
+                      const fixState = projectFixState(fileItem);
+                      const groupedReason = impactReasonGroups.find(([, files]) => files.includes(fileItem.relative_path));
+                      const fixAttempted = fixState === 'applied' || fixState === 'rejected';
                       return (
-                        <tr key={idx}>
+                        <tr key={fileItem.relative_path}>
                           <td><strong>{fileItem.filename}</strong></td>
                           <td>{fileItem.lines_of_code}</td>
                           <td>{post.sci_before !== undefined ? `${fixed(post.sci_before, 3)} → ${fixed(post.sci_after, 3)}` : fixed(fileItem.sci, 3)}</td>
                           <td>{fixed(fileItem.before_energy, 2)} → {fixed(fileItem.after_energy, 2)}</td>
-                          <td><span className={`status-badge ${fileItem?.fix_status === 'applied' ? 'success' : ''}`}>{(fileItem?.fix_status ?? 'not_auto_fixable').replaceAll('_', ' ')}</span></td>
-                          <td>{fileItem?.fix_reason || 'No reason was returned by the backend.'}</td>
+                          <td><span className={`status-badge ${fixState === 'applied' ? 'success' : fixState === 'rejected' ? 'error' : ''}`}>{fixStateLabels[fixState]}</span></td>
+                          <td>{groupedReason ? <span title={groupedReason[0]}>Reason shared by {groupedReason[1].length} file{groupedReason[1].length === 1 ? '' : 's'}; see grouped reasons above.</span> : fixState === 'no_issues' ? 'No findings were returned for this file.' : '—'}</td>
                           <td>
-                            {fileItem.single_file_response && (
+                            {fileItem.single_file_response && fixAttempted && (
                               <button className="small-button" onClick={() => {
                                 const detail = fileItem.single_file_response;
                                 if (!detail) return;
