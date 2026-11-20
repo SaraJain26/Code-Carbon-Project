@@ -2425,11 +2425,13 @@ function formatWindowTime(isoStr?: string): string {
   try {
     const d = new Date(isoStr);
     if (isNaN(d.getTime())) return isoStr;
-    const datePart = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const startHour = String(d.getUTCHours()).padStart(2, '0') + ':00';
-    const nextH = (d.getUTCHours() + 1) % 24;
-    const endHour = String(nextH).padStart(2, '0') + ':00';
-    return `${datePart} · ${startHour}–${endHour} UTC`;
+    const datePart = d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+    const startHour = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+    const endDate = new Date(d.getTime() + 60 * 60 * 1000);
+    const endHour = endDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+    const utcStart = d.toISOString().slice(11, 16);
+    const utcEnd = endDate.toISOString().slice(11, 16);
+    return `${datePart} · ${startHour}–${endHour} local (${utcStart}–${utcEnd} UTC)`;
   } catch {
     return isoStr;
   }
@@ -2440,7 +2442,7 @@ function formatHour(isoStr?: string): string {
   try {
     const d = new Date(isoStr);
     if (isNaN(d.getTime())) return isoStr;
-    return String(d.getUTCHours()).padStart(2, '0') + ':00';
+    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
   } catch {
     return isoStr;
   }
@@ -2479,26 +2481,36 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
   const forecastMinimum = forecast.forecast_minimum_intensity ?? forecast.lowest_forecast_intensity;
   const intensityWindow = forecast.intensity_window ?? Math.min(intensityNow, forecastMinimum);
   const schedulingReduction = forecast.scheduling_reduction_percent ?? Math.max(0, forecast.percentage_reduction);
-  const recTimeStr = hasCleanerWindow
-    ? formatWindowTime(forecast.window_start || forecast.recommended_execution_time || undefined)
-    : 'No cleaner forecast window · use current schedule';
-  const recTimeIso = forecast.window_start || forecast.recommended_execution_time;
   const nowMs = Date.now();
   const currentPointIndex = hourly.reduce((bestIndex: number, item: any, index: number) => {
-    const thisDistance = Math.abs(Date.parse(item.timestamp) - nowMs);
-    const bestDistance = Math.abs(Date.parse(hourly[bestIndex]?.timestamp) - nowMs);
-    return thisDistance < bestDistance ? index : bestIndex;
-  }, 0);
-  const currentPointDistance = Math.abs(Date.parse(hourly[currentPointIndex]?.timestamp) - nowMs);
-  const hasCurrentForecastPoint = Number.isFinite(currentPointDistance) && currentPointDistance <= 90 * 60 * 1000;
+    const thisTime = Date.parse(item.timestamp);
+    const bestTime = Date.parse(hourly[bestIndex]?.timestamp);
+    return thisTime <= nowMs && thisTime > bestTime ? index : bestIndex;
+  }, Math.max(0, hourly.findIndex((item: any) => Date.parse(item.timestamp) > nowMs) - 1));
+  const currentHourStart = Date.parse(hourly[currentPointIndex]?.timestamp);
+  const requestedRecIso = forecast.window_start || forecast.recommended_execution_time;
+  const requestedRecMs = Date.parse(requestedRecIso);
+  const requestedRecIndex = hourly.findIndex((item: any) => {
+    const hourStart = Date.parse(item.timestamp);
+    return requestedRecMs >= hourStart && requestedRecMs < hourStart + 60 * 60 * 1000;
+  });
+  const recTimeIndex = hasCleanerWindow && requestedRecIndex >= currentPointIndex ? requestedRecIndex : -1;
+  const recTimeIso = recTimeIndex >= 0 ? hourly[recTimeIndex].timestamp : null;
+  const recTimeStr = hasCleanerWindow && recTimeIso
+    ? `${recTimeIndex === currentPointIndex ? 'Starts now · ' : 'Starts later · '}${formatWindowTime(recTimeIso)}`
+    : hasCleanerWindow ? 'Recommended window is outside the remaining forecast hours' : 'No cleaner forecast window · use current schedule';
+  const hasCurrentForecastPoint = Number.isFinite(currentHourStart) && currentHourStart <= nowMs && nowMs < currentHourStart + 60 * 60 * 1000;
 
   const chartData = hourly.map((item: any, index: number) => {
-    const isOptimal = item.timestamp === recTimeIso;
+    const timestamp = Date.parse(item.timestamp);
+    const previous = index > 0 ? new Date(Date.parse(hourly[index - 1].timestamp)) : null;
+    const currentDate = new Date(timestamp);
+    const isDayBoundary = Boolean(previous && previous.toLocaleDateString() !== currentDate.toLocaleDateString());
     return {
-      time: formatHour(item.timestamp),
+      time: `${isDayBoundary ? `${currentDate.toLocaleDateString(undefined, { day: '2-digit', month: 'short' })} ` : ''}${formatHour(item.timestamp)}`,
       intensity: item.carbon_intensity,
       emissions: item.emissions_g,
-      isOptimal,
+      isOptimal: hasCleanerWindow && index === recTimeIndex,
       isCurrent: hasCurrentForecastPoint && index === currentPointIndex,
       rawTs: item.timestamp
     };
@@ -2521,7 +2533,7 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginTop: '16px' }}>
           <div style={{ background: 'var(--bg)', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--line)' }}>
-            <p style={{ fontSize: '11px', color: 'var(--muted)', margin: 0 }}>Forecast Grid Intensity</p>
+            <p style={{ fontSize: '11px', color: 'var(--muted)', margin: 0 }}>Best forecast hour intensity</p>
             <strong style={{ fontSize: '20px', color: 'var(--forest)', display: 'block', margin: '4px 0 0' }}>
               {fixed(forecastMinimum, 1)} <small style={{ fontSize: '11px', color: 'var(--muted)' }}>gCO₂eq/kWh</small>
             </strong>
@@ -2552,7 +2564,7 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
           <div>
             <p className="overline">24-HOUR CARBON INTENSITY FORECAST</p>
             <h3>Hourly Grid Carbon Intensity</h3>
-            <p className="forecast-chart-help">Red marks the current forecast hour, green the recommended hour, and blue the other hours. The dashed red line shows current grid intensity.</p>
+            <p className="forecast-chart-help">Times use your local timezone ({Intl.DateTimeFormat().resolvedOptions().timeZone}); UTC is shown in tooltips. Red marks the current forecast hour, green the recommended hour when one is cleaner, and blue the other hours. The dashed red line shows current grid intensity.</p>
           </div>
           <span style={{ fontSize: '12px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
             {hourly.length} forecast points
@@ -2561,9 +2573,9 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
 
         <div className="chart" style={{ marginTop: '16px' }}>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={chartData} margin={{ top: 20, right: 15, left: -15, bottom: 10 }}>
+            <BarChart data={chartData} margin={{ top: 20, right: 105, left: -15, bottom: 24 }}>
               <CartesianGrid vertical={false} stroke="#e7e4dd" strokeDasharray="3 3" />
-              <XAxis dataKey="time" tick={{ fill: '#6d6a63', fontSize: 11 }} />
+              <XAxis dataKey="time" tick={{ fill: '#6d6a63', fontSize: 11 }} label={{ value: `Time (${Intl.DateTimeFormat().resolvedOptions().timeZone}; UTC in tooltip)`, position: 'insideBottom', offset: -5 }} />
               <YAxis tick={{ fill: '#6d6a63', fontSize: 11 }} domain={[0, 'dataMax + 50']} />
               <Tooltip
                 cursor={{ fill: '#f3f1eb' }}
@@ -2580,12 +2592,12 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
                 <ReferenceLine x={currentPoint.time} stroke="#c53030" strokeWidth={2} strokeDasharray="3 3" label={{ value: 'NOW', fill: '#c53030', fontSize: 10, position: 'insideTop' }} />
               )}
               {intensityNow && (
-                <ReferenceLine
+                  <ReferenceLine
                   y={intensityNow}
                   stroke="#ef4444"
                   strokeWidth={2}
                   strokeDasharray="4 4"
-                  label={{ value: `Current ${fixed(intensityNow, 1)}`, fill: '#c53030', fontSize: 10, position: 'top' }}
+                  label={{ value: `Current ${fixed(intensityNow, 1)}`, fill: '#9f1d1d', fontSize: 11, fontWeight: 700, position: 'right' }}
                 />
               )}
               <Bar dataKey="intensity" name="Grid Intensity" radius={[4, 4, 0, 0]}>
@@ -2609,7 +2621,7 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
           </div>
           <div className="legend-custom-item">
             <span className="legend-custom-dot" style={{ background: '#12a66a' }}></span>
-            <span>Recommended hour</span>
+            <span>{hasCleanerWindow && recTimeIso ? 'Recommended hour' : 'Recommended hour · none cleaner'}</span>
           </div>
           <div className="legend-custom-item">
             <span className="legend-custom-dot" style={{ background: '#4f83cc' }}></span>
