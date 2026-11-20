@@ -12,6 +12,8 @@ const CATEGORY_COLORS: Record<string, string> = {
   'Other': '#64748b'
 };
 const CARBON_METHOD_NOTE = 'Carbon = modeled energy (relative J -> kWh) x grid intensity (gCO2eq/kWh). The energy score is a relative model, so carbon is a modeled comparison, not a measured emission.';
+const LOCAL_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+const LOCAL_TIME_ZONE_LABEL = ['Asia/Kolkata', 'Asia/Calcutta'].includes(LOCAL_TIME_ZONE) ? 'IST' : LOCAL_TIME_ZONE;
 
 function ChartFallback({ title, message }: { title?: string; message?: string }) {
   return (
@@ -663,6 +665,11 @@ export default function App() {
   // hour is dirtier than the project's current baseline.
   const impactScheduledIntensity = Number(impactForecast?.intensity_window ?? Math.min(impactCurrentIntensity, impactForecastMinimum));
   const cirsSchedulingRatio = impactCurrentIntensity > 0 ? impactScheduledIntensity / impactCurrentIntensity : 1;
+  const impactWindowStart = impactForecast?.window_start || impactForecast?.recommended_execution_time || undefined;
+  const currentLocalHour = new Date();
+  currentLocalHour.setMinutes(0, 0, 0);
+  const impactWindowIsUpcoming = !impactWindowStart || Date.parse(impactWindowStart) >= currentLocalHour.getTime();
+  const impactWindowStartsNow = isInCurrentLocalHour(impactWindowStart);
   const impactBeforeValues = {
     energy: projectBeforeEnergy,
     carbon: projectBeforeEnergy / 3_600_000 * impactCurrentIntensity,
@@ -2168,7 +2175,7 @@ export default function App() {
                   </tbody>
                 </table>
               </div>
-              {appliedFixDetails && <p className="soft-copy" style={{ padding: '0 16px 12px' }}><strong>Applied fix:</strong> {appliedFixDetails.file.relative_path} · {appliedFixDetails.fix.rule_id} · {appliedFixDetails.fix.description || 'AST transformation applied.'} <strong>Why Energy is unchanged:</strong> this refactor removes the reported smell, while the modeled loop operations remain in the energy estimate.</p>}
+              {appliedFixDetails && <p className="soft-copy" style={{ padding: '0 16px 12px' }}><strong>Applied fix:</strong> {appliedFixDetails.file.relative_path} · {appliedFixDetails.fix.rule_id} · {appliedFixDetails.fix.description || 'AST transformation applied.'} {Math.abs(projectBeforeEnergy - projectAfterEnergy) < 1e-9 ? <><strong>Why Energy is unchanged:</strong> the refactor removes the reported smell while the modeled loop-operation estimate remains unchanged.</> : <><strong>Modeled Energy change:</strong> {fixed(projectBeforeEnergy, 2)} → {fixed(projectAfterEnergy, 2)} modeled J (relative), based on the transformed source.</>}</p>}
               <p className="soft-copy" style={{ padding: '0 16px 14px' }}>Scheduling changes carbon and CIRS estimates only; Energy stays at the accepted-refactor estimate. CIRS includes carbon intensity as a term, so its After estimate uses the same window intensity. All figures are modeled, not measured. Source: {impactForecast?.source || projectResult?.carbon_source || 'Unavailable'} · {impactForecast?.source_type || projectResult?.carbon_source_type || 'unknown'}.</p>
             </section>
 
@@ -2179,8 +2186,8 @@ export default function App() {
               </div>
               {forecastLoading && !impactForecast ? <p className="soft-copy" style={{ padding: '0 16px 16px' }}>Loading the project forecast…</p> : (forecastError && !impactForecast) ? <p className="soft-copy" role="status" style={{ padding: '0 16px 16px' }}>Forecast unavailable: {forecastError}. Carbon comparison currently uses the selected grid intensity without a schedule adjustment.</p> : (
                 <div className="schedule-window-card" style={{ margin: '0 16px 16px' }}>
-                  <strong>{impactForecast?.has_cleaner_window === false ? 'No cleaner forecast window · use current schedule' : `${formatWindowTime(impactForecast?.window_start || impactForecast?.recommended_execution_time || undefined)}${impactForecast?.window_end ? ` to ${formatHour(impactForecast.window_end ?? undefined)}` : ''}`}</strong>
-                  <span title={CARBON_METHOD_NOTE}>{impactForecast?.has_cleaner_window === false ? `Best forecast hour: ${formatWindowTime(impactForecast?.recommended_execution_time || undefined)} · ` : ''}Intensity now {fixed(impactCurrentIntensity, 2)} → applied in window {fixed(impactScheduledIntensity, 2)} gCO₂eq/kWh · {fixed(impactForecast?.scheduling_reduction_percent ?? 0, 2)}% carbon reduction{impactForecast?.has_cleaner_window === false ? ` (best forecast ${fixed(impactForecastMinimum, 2)} is not cleaner)` : ''}</span>
+                  <strong>{impactForecast?.has_cleaner_window === false ? 'No cleaner forecast window · use current schedule' : !impactWindowIsUpcoming ? 'The saved forecast window has passed' : `${impactWindowStartsNow ? 'Starts now · ' : 'Starts later · '}${formatWindowTime(impactWindowStart)}${impactForecast?.window_end ? ` to ${formatHour(impactForecast.window_end ?? undefined)}` : ''}`}</strong>
+                  <span title={CARBON_METHOD_NOTE}>{!impactWindowIsUpcoming ? 'This analysis snapshot preserves its original modeled values; refresh the analysis for a new upcoming window. ' : ''}{impactForecast?.has_cleaner_window === false ? `Best forecast hour: ${formatWindowTime(impactForecast?.recommended_execution_time || undefined)} · ` : ''}Intensity now {fixed(impactCurrentIntensity, 2)} → applied in window {fixed(impactScheduledIntensity, 2)} gCO₂eq/kWh · {fixed(impactForecast?.scheduling_reduction_percent ?? 0, 2)}% carbon reduction{impactForecast?.has_cleaner_window === false ? ` (best forecast ${fixed(impactForecastMinimum, 2)} is not cleaner)` : ''}</span>
                 </div>
               )}
             </section>
@@ -2459,7 +2466,7 @@ function formatWindowTime(isoStr?: string): string {
     const endHour = endDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
     const utcStart = d.toISOString().slice(11, 16);
     const utcEnd = endDate.toISOString().slice(11, 16);
-    return `${datePart} · ${startHour}–${endHour} local (${utcStart}–${utcEnd} UTC)`;
+    return `${datePart} · ${startHour}–${endHour} ${LOCAL_TIME_ZONE_LABEL} (${utcStart}–${utcEnd} UTC)`;
   } catch {
     return isoStr;
   }
@@ -2474,6 +2481,15 @@ function formatHour(isoStr?: string): string {
   } catch {
     return isoStr;
   }
+}
+
+function isInCurrentLocalHour(isoStr?: string): boolean {
+  if (!isoStr) return false;
+  const timestamp = Date.parse(isoStr);
+  if (!Number.isFinite(timestamp)) return false;
+  const now = new Date();
+  now.setMinutes(0, 0, 0);
+  return timestamp >= now.getTime() && timestamp < now.getTime() + 60 * 60 * 1000;
 }
 
 function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecast: any; zoneName: string; zoneKey: string; loading?: boolean; error?: string | null }) {
@@ -2592,7 +2608,7 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
           <div>
             <p className="overline">24-HOUR CARBON INTENSITY FORECAST</p>
             <h3>Hourly Grid Carbon Intensity</h3>
-            <p className="forecast-chart-help">Times use your local timezone ({Intl.DateTimeFormat().resolvedOptions().timeZone}); UTC is shown in tooltips. Red marks the current forecast hour, green the recommended hour when one is cleaner, and blue the other hours. The dashed red line shows current grid intensity.</p>
+            <p className="forecast-chart-help">Times use your local timezone ({LOCAL_TIME_ZONE_LABEL}); UTC is shown in tooltips. Red marks the current forecast hour, green the recommended hour when one is cleaner, and blue the other hours. The dashed red line shows current grid intensity.</p>
           </div>
           <span style={{ fontSize: '12px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
             {hourly.length} forecast points
@@ -2603,7 +2619,7 @@ function ForecastView({ forecast, zoneName, zoneKey, loading, error }: { forecas
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={chartData} margin={{ top: 20, right: 105, left: -15, bottom: 24 }}>
               <CartesianGrid vertical={false} stroke="#e7e4dd" strokeDasharray="3 3" />
-              <XAxis dataKey="time" tick={{ fill: '#6d6a63', fontSize: 11 }} label={{ value: `Time (${Intl.DateTimeFormat().resolvedOptions().timeZone}; UTC in tooltip)`, position: 'insideBottom', offset: -5 }} />
+              <XAxis dataKey="time" tick={{ fill: '#6d6a63', fontSize: 11 }} label={{ value: `Time (${LOCAL_TIME_ZONE_LABEL}; UTC in tooltip)`, position: 'insideBottom', offset: -5 }} />
               <YAxis tick={{ fill: '#6d6a63', fontSize: 11 }} domain={[0, 'dataMax + 50']} />
               <Tooltip
                 cursor={{ fill: '#f3f1eb' }}
