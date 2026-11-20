@@ -27,18 +27,23 @@ function ChartFallback({ title, message }: { title?: string; message?: string })
 
 type RankedMetricItem = { name: string; relativePath: string; value: number };
 
-function middleEllipsisPath(path: string, limit = 34): string {
-  if (path.length <= limit) return path;
+function uniqueRankedPath(path: string, allPaths: string[], limit = 34): string {
   const parts = path.replace(/\\/g, '/').split('/');
+  let depth = Math.min(2, parts.length);
+  for (; depth < parts.length; depth += 1) {
+    const suffix = parts.slice(-depth).join('/');
+    if (allPaths.filter(candidate => candidate.replace(/\\/g, '/').endsWith(`/${suffix}`) || candidate.replace(/\\/g, '/') === suffix).length === 1) break;
+  }
+  const suffix = parts.slice(-depth).join('/');
+  const candidate = `${depth < parts.length ? '…/' : ''}${suffix}`;
+  if (candidate.length <= limit) return candidate;
+  const parent = parts.slice(Math.max(0, parts.length - depth), -1).join('/');
   const filename = parts.at(-1) || path;
-  const parent = parts.length > 1 ? parts.at(-2) : '';
-  const suffix = `${parent ? `${parent}/` : ''}${filename}`;
-  const prefixBudget = Math.max(0, limit - suffix.length - 2);
-  if (prefixBudget >= 3) return `${path.slice(0, prefixBudget)}…/${suffix}`;
-  const available = Math.max(6, limit - (parent ? parent.length + 1 : 0) - 1);
-  const start = Math.ceil(available / 2);
-  const end = Math.floor(available / 2);
-  return `${parent ? `${parent}/` : ''}${filename.slice(0, start)}…${filename.slice(-end)}`;
+  const parentPart = parent ? `${parent}/` : '';
+  const filenameBudget = Math.max(8, limit - parentPart.length - 5);
+  const filenameStart = Math.ceil(filenameBudget / 2);
+  const filenameEnd = Math.floor(filenameBudget / 2);
+  return `…/${parentPart}${filename.slice(0, filenameStart)}…${filename.slice(-filenameEnd)}`;
 }
 
 function RankedMetricBars({ items, color, formatValue, label, valueHelp }: {
@@ -51,11 +56,12 @@ function RankedMetricBars({ items, color, formatValue, label, valueHelp }: {
   if (!items.length) return <ChartFallback title="No successful file results" />;
   const maxValue = Math.max(...items.map(item => item.value), 0);
   if (maxValue <= 0) return <ChartFallback title="No non-zero values to compare" />;
+  const allPaths = items.map(item => item.relativePath);
   return (
     <div className="ranked-metric-list" role="list" aria-label={label}>
       {items.map((item, index) => (
         <div className="ranked-metric-row" role="listitem" key={`${item.relativePath}-${index}`} title={`${item.relativePath} · ${formatValue(item.value)}${valueHelp ? ` · ${valueHelp}` : ''}`}>
-          <span className="ranked-metric-name">{middleEllipsisPath(item.relativePath)}</span>
+          <span className="ranked-metric-name">{uniqueRankedPath(item.relativePath, allPaths)}</span>
           <span className="ranked-metric-track" aria-hidden="true">
             <span className="ranked-metric-fill" style={{ width: `${Math.max(2, (item.value / maxValue) * 100)}%`, background: color }} />
           </span>
@@ -623,6 +629,9 @@ export default function App() {
     (Array.isArray(raw.energy_smell_report?.findings) ? raw.energy_smell_report.findings.length : undefined) ??
     raw.energy_smell_report?.summary?.total_findings ??
     (Array.isArray(result?.findings) ? result.findings.length : recommendations.length);
+  const singleFileIsTestCode = isTestOrExamplePath(result?.filename || filename);
+  const singleVisibleFindings = singleFileIsTestCode && excludeTestCode ? [] : resultFindings;
+  const singleVisibleFindingCount = singleFileIsTestCode && excludeTestCode ? 0 : totalFindingsCount;
 
   // Carbon intensity: Primary value from backend response, fallback to frontend selectedZone ONLY if missing
   const projectReferenceFile = projectResult?.files.find(file => file.status === 'success' && file.single_file_response);
@@ -1964,11 +1973,13 @@ export default function App() {
           </div>
         </div>
 
+        {singleFileIsTestCode && <label className="test-code-toggle"><input type="checkbox" checked={excludeTestCode} onChange={event => setExcludeTestCode(event.target.checked)} /> Exclude test/example findings from totals <strong>{excludeTestCode ? 'On' : 'Off'}</strong> · Test code</label>}
+
         <div className="metric-grid">
           <Metric label="Estimated Energy" metric={fixed(energy.energy_joules, 3)} unit="modeled J (relative)" tone="green" />
               <Metric label="Risk-weighted carbon score (CIRS)" metric={fixed(metrics?.carbon_impact_risk_score, 6)} unit="unitless score" tone="ink" />
           <Metric label="Energy Smell Score" metric={fixed(metrics?.energy_smell_score, 2)} unit="out of 10" tone="amber" />
-          <Metric label="Finding locations" metric={String(totalFindingsCount)} unit="detector locations in this file" tone="blue" />
+          <Metric label="Finding locations" metric={String(singleVisibleFindingCount)} unit={singleFileIsTestCode ? 'test-code toggle applied' : 'detector locations in this file'} tone="blue" />
         </div>
 
         <div className="metric-grid" style={{ marginTop: '16px' }}>
@@ -2112,13 +2123,13 @@ export default function App() {
             <section className="panel suggested-code-section">
               <div className="panel-head">
                 <div><p className="overline">ISSUE-BY-ISSUE FIXES</p><h3>Suggested Code Changes</h3></div>
-                <span>{resultFindings.length} detected issue(s)</span>
+                <span>{singleVisibleFindings.length} finding location{singleVisibleFindings.length === 1 ? '' : 's'} shown{singleFileIsTestCode ? ` · Test code ${excludeTestCode ? 'excluded' : 'included'}` : ''}</span>
               </div>
               <CodeChangesSection
                 filename={result.filename || filename}
                 sourceCode={code || result.original_code || ''}
                 optimizedCode={result.optimized_code}
-                findings={resultFindings}
+                findings={singleVisibleFindings}
                 autoFixes={result.auto_applied_fixes || []}
                 manualFixes={result.manual_fixes || []}
                 recommendations={recommendations}
