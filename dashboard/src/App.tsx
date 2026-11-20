@@ -650,11 +650,14 @@ export default function App() {
     cirs: Number(projectAfter?.cirs ?? impactBeforeValues.cirs) * cirsSchedulingRatio,
   };
   const impactRows = [
-    { name: 'Energy', unit: 'modeled J', digits: 2, before: impactBeforeValues.energy, after: impactAfterValues.energy },
-    { name: 'Carbon footprint', unit: 'modeled gCO₂eq/run', digits: 6, before: impactBeforeValues.carbon, after: impactAfterValues.carbon },
-    { name: 'ESS', unit: 'summed score', digits: 3, before: impactBeforeValues.ess, after: impactAfterValues.ess },
+    { name: 'Energy', unit: 'modeled J (relative)', digits: 2, before: impactBeforeValues.energy, after: impactAfterValues.energy },
+    { name: 'Carbon footprint', unit: 'modeled gCO₂eq/run', digits: 6, before: impactBeforeValues.carbon, after: impactAfterValues.carbon, help: 'Carbon = modeled energy (relative J -> kWh) x grid intensity (gCO2eq/kWh). The energy score is a relative model, so carbon is a modeled comparison, not a measured emission.' },
+    { name: 'Finding locations', unit: 'detector locations', digits: 0, before: (projectResult?.files ?? []).reduce((sum, file) => sum + (file.status === 'success' ? file.findings_count : 0), 0), after: (projectResult?.files ?? []).reduce((sum, file) => sum + Number(file.single_file_response?.post_refactor_estimation?.finding_locations_after ?? file.findings_count), 0) },
+    { name: 'Mean ESS per file', unit: 'index (0–10)', digits: 2, before: projectResult?.avg_ess ?? 0, after: (projectResult?.files ?? []).filter(file => file.status === 'success').reduce((sum, file) => sum + file.after_ess, 0) / Math.max(1, projectResult?.successful_files ?? 0) },
+    { name: 'Sum of per-file ESS (index)', unit: 'index (0–10) · one run per file', digits: 3, before: impactBeforeValues.ess, after: impactAfterValues.ess },
     { name: 'CIRS', unit: 'summed risk-weighted score', digits: 6, before: impactBeforeValues.cirs, after: impactAfterValues.cirs },
   ];
+  const appliedFixDetails = (projectResult?.files ?? []).flatMap(file => (file.single_file_response?.auto_applied_fixes ?? []).map(fix => ({ file, fix })))[0];
 
   // Complexity metrics for single file
   const rawComplexity = raw.complexity_metrics || {};
@@ -2129,12 +2132,16 @@ export default function App() {
               </div>
               <div className="project-table-wrap">
                 <table className="project-table">
-                  <thead><tr><th>Estimated metric</th><th>Before</th><th>After</th><th>Delta (after − before)</th></tr></thead>
+                  <thead><tr><th>Estimated metric</th><th>Before</th><th>After</th><th>Delta (after − before)</th><th>Delta %</th></tr></thead>
                   <tbody>
-                    {impactRows.map(row => <tr key={row.name}><td><strong>{row.name}</strong></td><td>{fixed(row.before, row.digits)} {row.unit}</td><td>{fixed(row.after, row.digits)} {row.unit}</td><td>{fixed(row.after - row.before, row.digits)} {row.unit}</td></tr>)}
+                    {impactRows.map(row => {
+                      const deltaPercent = row.before === 0 ? null : (row.after - row.before) / Math.abs(row.before) * 100;
+                      return <tr key={row.name}><td><strong title={row.help}>{row.name}{row.help ? ' ⓘ' : ''}</strong></td><td title={row.help}>{fixed(row.before, row.digits)} {row.unit}</td><td title={row.help}>{fixed(row.after, row.digits)} {row.unit}</td><td title={row.help}>{fixed(row.after - row.before, row.digits)} {row.unit}</td><td>{deltaPercent === null ? '—' : `${fixed(deltaPercent, 2)}%`}</td></tr>;
+                    })}
                   </tbody>
                 </table>
               </div>
+              {appliedFixDetails && <p className="soft-copy" style={{ padding: '0 16px 12px' }}><strong>Applied fix:</strong> {appliedFixDetails.file.relative_path} · {appliedFixDetails.fix.rule_id} · {appliedFixDetails.fix.description || 'AST transformation applied.'} <strong>Why Energy is unchanged:</strong> this refactor removes the reported smell, while the modeled loop operations remain in the energy estimate.</p>}
               <p className="soft-copy" style={{ padding: '0 16px 14px' }}>Scheduling changes carbon and CIRS estimates only; Energy stays at the accepted-refactor estimate. CIRS includes carbon intensity as a term, so its After estimate uses the same window intensity. All figures are modeled, not measured. Source: {impactForecast?.source || projectResult?.carbon_source || 'Unavailable'} · {impactForecast?.source_type || projectResult?.carbon_source_type || 'unknown'}.</p>
             </section>
 
