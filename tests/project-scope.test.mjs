@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getCategoryCounts, getEssBands, getScopeFiles, getScopeMetrics, isTestOrExamplePath } from '../dashboard/src/project-scope.ts';
+import { getCategoryCounts, getEssBands, getOverviewTakeaways, getScopeFiles, getScopeMetrics, isTestOrExamplePath } from '../dashboard/src/project-scope.ts';
 
 function file(relative_path, overrides = {}) {
   return {
@@ -34,11 +34,23 @@ test('shared scope selection recomputes project totals and retains zero categori
   assert.equal(getScopeMetrics(sourceFiles).energyJoules, 20);
   assert.equal(getScopeMetrics(sourceFiles).findingLocations, 2);
   assert.deepEqual(getCategoryCounts(sourceFiles), [
-    { name: 'File & I/O', count: 1 }, { name: 'Memory', count: 1 }, { name: 'Network', count: 0 },
-    { name: 'Computation', count: 0 }, { name: 'Control Flow', count: 0 },
+    { name: 'File & I/O', count: 1, rules: ['EKB-IO-001 — EKB-IO-001'] },
+    { name: 'Memory', count: 1, rules: ['EKB-MEM-001 — EKB-MEM-001'] },
+    { name: 'Network', count: 0, rules: [] }, { name: 'Computation', count: 0, rules: [] },
+    { name: 'Control Flow', count: 0, rules: [] },
   ]);
   assert.deepEqual(getEssBands(allFiles).map(band => band.count), [1, 1, 1]);
   assert.equal(isTestOrExamplePath('pkg/tests/test_x.py'), true);
   assert.equal(isTestOrExamplePath('pkg/examples/demo.py'), true);
   assert.equal(isTestOrExamplePath('pkg/src/app.py'), false);
+  const allTakeaways = getOverviewTakeaways(allFiles);
+  const sourceTakeaways = getOverviewTakeaways(sourceFiles);
+  assert.match(allTakeaways.energySentence, /examples\/demo\.py/);
+  assert.match(sourceTakeaways.energySentence, /src\/app\.py/);
+  assert.notEqual(allTakeaways.energySentence, sourceTakeaways.energySentence);
+  assert.notEqual(allTakeaways.categorySentence, sourceTakeaways.categorySentence);
+  assert.notEqual(allTakeaways.concentrationSentence, sourceTakeaways.concentrationSentence);
+  assert.notEqual(allTakeaways.fixFirstSentence, sourceTakeaways.fixFirstSentence);
+  assert.deepEqual(allTakeaways.filesToFix.slice(0, 2), ['tests/test_app.py', 'src/app.py']);
+  assert.deepEqual(sourceTakeaways.filesToFix, ['src/app.py']);
 });

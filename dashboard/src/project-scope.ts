@@ -21,6 +21,9 @@ export function getScopeMetrics(files: ProjectFileResult[]) {
     for (const finding of findings) if (finding.rule_id) distinctRules.add(String(finding.rule_id));
   }
   const withFindings = successful.filter(file => file.findings_count > 0).length;
+  const findingsInFilesWithFindings = successful
+    .filter(file => file.findings_count > 0)
+    .reduce((total, file) => total + Number(file.findings_count || 0), 0);
   return {
     totalFiles: files.length,
     successfulFiles: successful.length,
@@ -30,6 +33,7 @@ export function getScopeMetrics(files: ProjectFileResult[]) {
     ruleInstances: sum(file => file.rule_count),
     distinctRules: distinctRules.size,
     filesWithFindings: withFindings,
+    findingsInFilesWithFindings,
     cleanFiles: successful.length - withFindings,
     meanSci: successful.length ? sum(file => file.sci) / successful.length : 0,
     meanEss: successful.length ? sum(file => file.ess) / successful.length : 0,
@@ -48,6 +52,7 @@ export function getScopeMetrics(files: ProjectFileResult[]) {
 
 export function getCategoryCounts(files: ProjectFileResult[]) {
   const counts = new Map<string, number>(SCOPE_CATEGORIES.map(category => [category, 0]));
+  const rules = new Map<string, Map<string, string>>(SCOPE_CATEGORIES.map(category => [category, new Map()]));
   for (const file of files) {
     if (file.status !== 'success') continue;
     const findings = file.single_file_response?.pipeline_raw?.energy_smell_report?.findings || [];
@@ -60,9 +65,53 @@ export function getCategoryCounts(files: ProjectFileResult[]) {
             : ruleId.includes('comp-') || ['nest', 'loop', 'comput', 'math'].some(part => category.includes(part)) ? 'Computation'
               : 'Control Flow';
       counts.set(bucket, (counts.get(bucket) || 0) + 1);
+      if (ruleId) {
+        const bucketRules = rules.get(bucket)!;
+        const originalRuleId = String(finding.rule_id);
+        bucketRules.set(originalRuleId, String(finding.message || originalRuleId));
+      }
     }
   }
-  return SCOPE_CATEGORIES.map(name => ({ name, count: counts.get(name) || 0 }));
+  return SCOPE_CATEGORIES.map(name => ({ name, count: counts.get(name) || 0, rules: [...(rules.get(name)?.entries() || [])].map(([id, title]) => `${id} — ${title}`) }));
+}
+
+export function getOverviewTakeaways(files: ProjectFileResult[], displayPath: (path: string) => string = path => path) {
+  const successful = files.filter(file => file.status === 'success');
+  const metrics = getScopeMetrics(files);
+  const energyRanked = [...successful].sort((a, b) => b.energy_joules - a.energy_joules);
+  const topTen = energyRanked.slice(0, 10);
+  const topTenEnergy = topTen.reduce((sum, file) => sum + Number(file.energy_joules || 0), 0);
+  const topEnergy = energyRanked[0];
+  const categories = getCategoryCounts(files).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  const topCategory = categories.find(category => category.count > 0);
+  const filesToFix = successful.filter(file => file.findings_count > 0).sort((a, b) => b.cirs - a.cirs).slice(0, 3);
+  const categoryShare = metrics.findingLocations ? (topCategory?.count || 0) / metrics.findingLocations * 100 : 0;
+  const concentrationShare = metrics.findingLocations ? metrics.findingsInFilesWithFindings / metrics.findingLocations * 100 : 0;
+  const topTenShare = metrics.energyJoules ? topTenEnergy / metrics.energyJoules * 100 : 0;
+  const topFileShare = metrics.energyJoules && topEnergy ? topEnergy.energy_joules / metrics.energyJoules * 100 : 0;
+  const topFixNames = filesToFix.map(file => displayPath(file.relative_path));
+  const highEssCount = getEssBands(files).find(band => band.label === 'High')?.count || 0;
+  return {
+    topTenShare,
+    topFileShare,
+    topFilePath: topEnergy?.relative_path || '',
+    categoryName: topCategory?.name || '',
+    categoryShare,
+    categoryCount: topCategory?.count || 0,
+    findingLocations: metrics.findingLocations,
+    filesWithFindings: metrics.filesWithFindings,
+    totalFiles: metrics.successfulFiles,
+    concentrationShare,
+    filesToFix: filesToFix.map(file => file.relative_path),
+    energySentence: topEnergy
+      ? `Top 10 = ${topTenShare.toFixed(1)}% of the project's modeled energy; ${displayPath(topEnergy.relative_path)} alone uses ${topFileShare.toFixed(1)}%.`
+      : 'No file energy is available in this scope.',
+    categorySentence: topCategory?.count
+      ? `${topCategory.name} patterns are ${categoryShare.toFixed(1)}% of all findings.`
+      : 'No findings were returned in this scope.',
+    concentrationSentence: `${metrics.filesWithFindings} of ${metrics.successfulFiles} files hold ${metrics.findingsInFilesWithFindings} of ${metrics.findingLocations} finding locations (${concentrationShare.toFixed(1)}%).`,
+    fixFirstSentence: `${highEssCount} files have high smell scores. ${topFixNames.length ? `Start with ${topFixNames.join(', ')}.` : 'No files with findings need review.'}`,
+  };
 }
 
 export function getEssBands(files: ProjectFileResult[]) {
