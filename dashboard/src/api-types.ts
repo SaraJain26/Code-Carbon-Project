@@ -114,8 +114,22 @@ export interface AnalyzeResponse {
   optimized_code?: string;
   auto_applied_fixes?: any[];
   manual_fixes?: any[];
+  location_suggestions?: LocationSuggestion[];
+  ai_suggestions_unavailable?: boolean;
   post_refactor_estimation?: any;
   measured_runtime?: any;
   findings?: any[];
   [key: string]: any;
+}
+
+export interface LocationSuggestion {
+  rule_id: string;
+  line_number: number | null;
+  line_start: number;
+  line_end: number;
+  original_code: string;
+  replacement_code: string | null;
+  confidence: 'Verified' | 'Suggested' | 'AI-suggested, verified by re-analysis' | 'Review needed' | 'No safe rewrite';
+  status: 'verified' | 'suggested' | 'ai_suggested' | 'review_needed' | 'no_safe_rewrite';
+  reason: string;
 }

@@ -34,6 +34,7 @@ from carbon import get_carbon_provider, MockCarbonIntensityProvider
 from pipeline import PredictivePipeline
 from recommendation.engine import RecommendationEngine
 from recommendation.transformer import ASTCodeTransformer
+from recommendation.location_suggestions import build_location_suggestions
 from energy.sandbox import SandboxedRuntimeExecutor
 from energy.loop_ops import loop_weighted_ops
 from sustainability.metrics import ResearchSustainabilityMetrics
@@ -779,6 +780,17 @@ def run_single_file_analysis(
                 except Exception:
                     pass
 
+        location_suggestions = build_location_suggestions(
+            source_code,
+            serialize_value(result).get("energy_smell_report", {}).get("findings", []),
+            transform_res.auto_applied_fixes,
+            analyzer=lambda rewritten: [
+                {"rule_id": finding.rule_id, "confidence": float(getattr(finding.confidence, "value", 1.0) if hasattr(finding, "confidence") else 1.0)}
+                for finding in pipeline._detect(
+                    pipeline._analysis_engine.analyze_source(rewritten, temp_path)
+                ).findings
+            ],
+        )
         response = {
             "filename": filename,
             "original_code": source_code,
@@ -795,6 +807,8 @@ def run_single_file_analysis(
             "optimized_file_url": optimized_file_url,
             "auto_applied_fixes": transform_res.auto_applied_fixes,
             "manual_fixes": transform_res.manual_fixes,
+            "location_suggestions": location_suggestions,
+            "ai_suggestions_unavailable": any(item["ai_unavailable"] for item in location_suggestions),
             "estimated_impact": real_estimated_impact,
             "measured_runtime": measured_runtime,
             "execution_status": measured_runtime.get("execution_status", "not_executed"),

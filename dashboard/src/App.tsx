@@ -1,7 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, AlertCircle, ArrowLeft, ArrowRight, ChevronDown, ChevronRight, Clock3, Code2, Copy, Download, FileCode2, FileText, Flame, Folder, FolderArchive, Gauge, Globe2, Leaf, LoaderCircle, Moon, Play, Search, Sparkles, Sun, Upload, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import type { AnalyzeResponse, ForecastResponse, ProjectAnalyzeResponse, ProjectFileResult } from './api-types';
+import type { AnalyzeResponse, ForecastResponse, ProjectAnalyzeResponse, ProjectFileResult, LocationSuggestion } from './api-types';
 import { getCategoryCounts, getEssBands, getEssFineHistogram, getOverviewTakeaways, getScopeFiles, getScopeMetrics, isTestOrExamplePath } from './project-scope';
 
 const CARBON_METHOD_NOTE = 'Carbon = modeled energy (relative J -> kWh) x grid intensity (gCO2eq/kWh). The energy score is a relative model, so carbon is a modeled comparison, not a measured emission.';
@@ -74,13 +74,6 @@ type ComparisonRow = { name: string; before: number; after: number; unit: string
 
 const PYTHON_KEYWORDS = new Set(['and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except', 'False', 'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'True', 'try', 'while', 'with', 'yield', 'None']);
 
-function ruleExampleReplacement(example?: string | null): string | undefined {
-  if (!example) return undefined;
-  const afterMarker = example.match(/(?:^|\n)\s*# After:\s*\n/i);
-  if (!afterMarker || afterMarker.index === undefined) return undefined;
-  return example.slice(afterMarker.index + afterMarker[0].length).trim() || undefined;
-}
-
 function projectFixState(file: ProjectFileResult): 'applied' | 'rejected' | 'not_auto_fixable' | 'no_issues' | 'failed' {
   if (file.status === 'error') return 'failed';
   if (file.findings_count === 0) return 'no_issues';
@@ -137,106 +130,161 @@ function CopyCodeButton({ code, label = 'Copy code' }: { code: string; label?: s
   return <button className="copy-code-button" type="button" onClick={copy}><Copy size={13} />{copied ? 'Copied' : label}</button>;
 }
 
-function CodeChangesSection({ filename, sourceCode, optimizedCode, findings, autoFixes = [], manualFixes = [], recommendations = [], shownGenericPatterns }: {
-  filename: string;
-  sourceCode: string;
-  optimizedCode?: string;
-  findings: any[];
-  autoFixes?: any[];
-  manualFixes?: any[];
-  recommendations?: any[];
-  shownGenericPatterns?: Set<string>;
+function unifiedDiffRows(original: string, replacement: string): { sign: ' ' | '-' | '+'; text: string }[] {
+  const before = original.split(/\r?\n/);
+  const after = replacement.split(/\r?\n/);
+  if (before.length * after.length > 40000) return [...before.map(text => ({ sign: '-' as const, text })), ...after.map(text => ({ sign: '+' as const, text }))];
+  const lcs = Array.from({ length: before.length + 1 }, () => Array(after.length + 1).fill(0));
+  for (let i = before.length - 1; i >= 0; i -= 1) for (let j = after.length - 1; j >= 0; j -= 1) {
+    lcs[i][j] = before[i] === after[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+  }
+  const rows: { sign: ' ' | '-' | '+'; text: string }[] = [];
+  let i = 0, j = 0;
+  while (i < before.length && j < after.length) {
+    if (before[i] === after[j]) rows.push({ sign: ' ', text: before[i++] }), j++;
+    else if (lcs[i + 1][j] >= lcs[i][j + 1]) rows.push({ sign: '-', text: before[i++] });
+    else rows.push({ sign: '+', text: after[j++] });
+  }
+  while (i < before.length) rows.push({ sign: '-', text: before[i++] });
+  while (j < after.length) rows.push({ sign: '+', text: after[j++] });
+  return rows;
+}
+
+const RULE_NAMES: Record<string, string> = {
+  'EKB-COMP-001': 'Nested loops',
+  'EKB-COMP-002': 'Repeated computation in a loop',
+  'EKB-COMP-003': 'Recursive computation',
+  'EKB-IO-001': 'Repeated file I/O',
+  'EKB-NET-001': 'Repeated network request',
+  'EKB-MEM-001': 'Temporary allocation in a loop',
+  'EKB-ASYNC-001': 'Synchronous blocking in async',
+};
+
+function LocationCodeComparison({ original, replacement, startLine = 1 }: {
+  original: string;
+  replacement: string;
+  startLine?: number;
 }) {
-  const [showModifiedCode, setShowModifiedCode] = useState(false);
-  const sourceLines = sourceCode.split(/\r?\n/);
-  const findFix = (fixes: any[], finding: any) => fixes.find(fix => {
-    if (fix.rule_id !== finding.rule_id) return false;
-    const issueLine = finding.line_number;
-    return issueLine == null || fix.line_number === issueLine
-      || (fix.line_start != null && fix.line_end != null && issueLine >= fix.line_start && issueLine <= fix.line_end);
-  });
+  const [showDiff, setShowDiff] = useState(false);
+  const safeOriginal = original.trim() || '# Original source unavailable';
+  const safeReplacement = replacement.trim();
+  const diffRows = unifiedDiffRows(safeOriginal, safeReplacement);
+  const diffText = diffRows.map(row => `${row.sign}${row.text}`).join('\n');
+
   return (
-    <div className="code-changes-file">
-      <h3><FileCode2 size={16} />{filename}</h3>
-      {findings.length ? findings.map((finding, index) => {
-        const autoFix = findFix(autoFixes, finding);
-        const manualFix = findFix(manualFixes, finding);
-        const recommendation = recommendations.find(item => item.rule_id === finding.rule_id);
-        const lineStart = autoFix?.line_start ?? manualFix?.line_start ?? finding.line_number ?? undefined;
-        const lineEnd = autoFix?.line_end ?? manualFix?.line_end ?? finding.end_line ?? finding.line_number ?? lineStart;
-        const originalCode = autoFix?.original_code || manualFix?.original_code
-          || (Number.isInteger(lineStart) ? sourceLines.slice(lineStart - 1, lineEnd).join('\n') : '');
-        const verifiedReplacement = autoFix?.replacement_code as string | undefined;
-        const exampleReplacement = ruleExampleReplacement(recommendation?.code_example);
-        const verified = Boolean(autoFix?.is_auto_applied && verifiedReplacement && optimizedCode && optimizedCode !== sourceCode);
-        const showGenericPattern = Boolean(exampleReplacement && !verifiedReplacement && !shownGenericPatterns?.has(exampleReplacement));
-        if (showGenericPattern && exampleReplacement) shownGenericPatterns?.add(exampleReplacement);
-        return (
-          <details className="code-change-item" key={`${finding.rule_id}-${finding.line_number}-${index}`} open>
-            <summary>
-              <span><strong>{finding.message || recommendation?.title || finding.rule_id}</strong><small>{finding.rule_id} · {filename} · {isTestOrExamplePath(filename) ? 'Test code · ' : ''}{lineStart == null ? 'Line unavailable' : lineStart === lineEnd ? `Line ${lineStart}` : `Lines ${lineStart}–${lineEnd}`}</small></span>
-              <ChevronDown size={16} />
-            </summary>
-            <div className="code-change-content">
-              <div className="code-change-columns">
-                <section>
-                  <div className="code-block-heading"><strong>Original code</strong>{originalCode && <CopyCodeButton code={originalCode} label="Copy original" />}</div>
-                  {originalCode ? <PythonCodeBlock code={originalCode} startLine={lineStart ?? 1} /> : <p className="code-unavailable">Source unavailable. Re-run analysis.</p>}
-                </section>
-                <section>
-                  <div className="code-block-heading"><strong>{verified ? 'Auto-applied fix' : 'Verified replacement'}</strong>{verifiedReplacement && <CopyCodeButton code={verifiedReplacement} label="Copy fix" />}</div>
-                  {verified ? <><PythonCodeBlock code={verifiedReplacement!} startLine={lineStart ?? 1} /><button className="apply-code-button" type="button" onClick={() => setShowModifiedCode(true)}>Apply verified fixes to preview</button></> : <p className="code-unavailable">No automatic fix was applied to this finding.</p>}
-                </section>
-              </div>
-              {showGenericPattern && exampleReplacement && <section className="generic-rule-pattern"><div className="code-block-heading"><strong>Generic pattern for this rule, not auto-generated for your code</strong><CopyCodeButton code={exampleReplacement} label="Copy generic pattern" /></div><PythonCodeBlock code={exampleReplacement} startLine={lineStart ?? 1} /></section>}
+    <div className="location-comparison">
+      <div className="location-comparison-toolbar">
+        <button className="small-button diff-toggle-btn" type="button" onClick={() => setShowDiff(value => !value)}>
+          {showDiff ? 'Side-by-side view' : 'Unified diff'}
+        </button>
+      </div>
+      {showDiff ? (
+        <div className="location-diff">
+          <div className="code-block-heading">
+            <strong>Unified diff</strong>
+            <CopyCodeButton code={diffText} label="Copy diff" />
+          </div>
+          <pre className="python-code-block unified-diff-block">
+            <code>
+              {diffRows.map((row, index) => (
+                <span
+                  className={`python-code-line diff-line diff-${row.sign === '+' ? 'added' : row.sign === '-' ? 'removed' : 'context'}`}
+                  key={index}
+                >
+                  <span className="python-line-number">{startLine + index}</span>
+                  <span className="diff-sign">{row.sign}</span>
+                  <span>{row.text || ' '}</span>
+                </span>
+              ))}
+            </code>
+          </pre>
+        </div>
+      ) : (
+        <div className="code-change-columns location-code-columns">
+          <section>
+            <div className="code-block-heading">
+              <strong>Original code</strong>
+              <CopyCodeButton code={safeOriginal} label="Copy original" />
             </div>
-          </details>
-        );
-      }) : <p className="code-unavailable">No findings were returned for this file.</p>}
-      {showModifiedCode && optimizedCode && (
-        <section className="modified-code-preview">
-          <div className="code-block-heading"><strong>Modified file preview</strong><CopyCodeButton code={optimizedCode} label="Copy modified file" /></div>
-          <p>The original upload remains unchanged. This preview contains the verified AST output.</p>
-          <PythonCodeBlock code={optimizedCode} />
-        </section>
+            <PythonCodeBlock code={safeOriginal} startLine={startLine} />
+          </section>
+          <section>
+            <div className="code-block-heading">
+              <strong>Suggested replacement</strong>
+              <CopyCodeButton code={safeReplacement} label="Copy replacement" />
+            </div>
+            <PythonCodeBlock code={safeReplacement} startLine={startLine} />
+          </section>
+        </div>
       )}
     </div>
   );
 }
 
-type RuleGuidance = {
-  title: string; what: string; why: string; steps: string[]; before: string; after: string;
-};
+function CodeChangesSection({ filename, sourceCode, findings, locationSuggestions = [] }: {
+  filename: string;
+  sourceCode: string;
+  findings: any[];
+  autoFixes?: any[];
+  manualFixes?: any[];
+  recommendations?: any[];
+  locationSuggestions?: LocationSuggestion[];
+}) {
+  const sourceLines = sourceCode.split(/\r?\n/);
+  const totalCount = findings.length;
 
-const RULE_GUIDANCE: Record<string, RuleGuidance> = {
-  'EKB-COMP-001': { title: 'Nested loops', what: 'Two or more loops are nested, so inner work can repeat for each outer item.', why: 'Repeated comparisons and operations add CPU work as the collections grow. The actual cost depends on collection sizes and the work inside the loops.', steps: ['Check whether the inner loop scans for a matching key; build a dict or set once when that preserves behavior.', 'Hoist values that do not change between iterations out of the inner loop.', 'For numeric batches, consider a vectorized operation; otherwise consider itertools only when it preserves ordering and laziness.'], before: 'for item in items:\n    for key in keys:\n        if item.key == key:\n            use(item)', after: 'keys_set = set(keys)\nfor item in items:\n    if item.key in keys_set:\n        use(item)' },
-  'EKB-COMP-002': { title: 'Repeated computation in a loop', what: 'An expression or assignment inside a loop may be invariant across iterations.', why: 'If its inputs stay unchanged, recomputing the same value adds CPU work. Verify dependencies before moving it.', steps: ['Check every input read by the expression for mutation in the loop.', 'If the value is invariant, compute it immediately before the loop.', 'Keep per-iteration calculations inside the loop when inputs change.'], before: 'for item in items:\n    limit = build_limit(config)\n    use(item, limit)', after: 'limit = build_limit(config)\nfor item in items:\n    use(item, limit)' },
-  'EKB-COMP-003': { title: 'Recursive call', what: 'A function calls itself directly or through a detected recursive call cycle.', why: 'Deep recursion creates call frames and can hit recursion limits. Small or naturally recursive inputs may be clearer and inexpensive.', steps: ['Confirm the recursive call and its stopping condition.', 'For deep inputs, use an explicit stack or iterative traversal.', 'Memoize repeated subproblems when the same inputs recur.'], before: 'def visit(node):\n    return sum(visit(child) for child in node.children)', after: 'def visit(root):\n    total = 0\n    stack = [root]\n    while stack:\n        node = stack.pop()\n        total += 1\n        stack.extend(node.children)\n    return total' },
-  'EKB-IO-001': { title: 'Repeated file I/O', what: 'A file open/read/write operation may occur within a loop.', why: 'Repeated file operations can add filesystem syscalls and storage overhead. A single open handle or buffered batch may help when the loop truly encloses the operation.', steps: ['Confirm the operation is actually inside a repeated loop and the file can remain open safely.', 'Open once outside the loop and reuse the handle when mode and error behavior allow.', 'Batch or buffer writes, or cache repeated reads when contents remain valid.'], before: 'for row in rows:\n    with open(path, "a") as stream:\n        stream.write(row)', after: 'with open(path, "a") as stream:\n    for row in rows:\n        stream.write(row)' },
-  'EKB-NET-001': { title: 'Repeated network request', what: 'A recognized network client call may occur inside a loop.', why: 'Each request can add network round trips and connection work. Confirm the receiver is an HTTP client; names such as session or client can also refer to local framework state.', steps: ['Verify the call is an actual remote request and identify the service API.', 'Batch requests when the API supports it and semantics remain equivalent.', 'Reuse a session/connection pool and cache responses only when freshness rules allow.'], before: 'for item_id in item_ids:\n    result = http.get(url_for(item_id))', after: 'result = http.post(batch_url, json={"ids": item_ids})' },
-  'EKB-MEM-001': { title: 'Temporary allocation in a loop', what: 'A collection or other temporary object is constructed within a loop.', why: 'Repeated allocations can increase memory traffic and garbage collection work. Reuse is safe only when each iteration does not need an independent object.', steps: ['Check whether the object is consumed before the next iteration.', 'Reuse a buffer when ownership and mutation are safe.', 'Stream or use a generator when downstream code accepts lazy values.'], before: 'for item in items:\n    values = [transform(x) for x in item.parts]\n    consume(values)', after: 'for item in items:\n    consume(transform(x) for x in item.parts)' },
-};
+  const validCards = findings.flatMap((finding, index) => {
+    const issueLine = finding.line_number;
+    const suggestion = locationSuggestions.find(item => item.rule_id === finding.rule_id && item.line_number === (issueLine ?? null));
+    const replacement = (suggestion?.replacement_code || '').trim();
+    if (!replacement) return suggestion ? [{
+      key: `${finding.rule_id}-${issueLine}-${index}`,
+      cardTitle: `${RULE_NAMES[finding.rule_id] || finding.message || finding.rule_id} · ${filename}:${issueLine || suggestion.line_start || 1}`,
+      original: suggestion.original_code || '', replacement: '', startLine: suggestion.line_start || issueLine || 1,
+      reason: suggestion.reason || 'No safe rewrite is available for this finding.',
+    }] : [];
 
-function confidenceValue(finding: any): number {
-  const value = finding?.confidence;
-  return Number(typeof value === 'object' ? value?.value : value ?? 0);
-}
+    const lineStart = suggestion?.line_start || issueLine || 1;
+    const contextOriginal = (suggestion?.original_code || (Number.isInteger(lineStart) ? sourceLines.slice(Math.max(0, lineStart - 1), Math.min(sourceLines.length, lineStart + 4)).join('\n') : '')).trim();
 
-function confidenceLabel(value: number): 'High' | 'Medium' | 'Low' {
-  return value >= 0.8 ? 'High' : value >= 0.6 ? 'Medium' : 'Low';
-}
+    if (!contextOriginal || replacement === contextOriginal) return [];
 
-function contextHint(ruleId: string, code: string, context: string, confidence: number): string | undefined {
-  const compact = code.trim();
-  if (ruleId === 'EKB-COMP-003' && /^def\s+__init__\s*\(/.test(compact)) return 'This is an initializer definition, not itself a recursive call. Review needed: the detector may have matched a same-named method or super().__init__ call.';
-  if (ruleId === 'EKB-COMP-001' && compact.includes('self.template_context_processors[name]')) return 'This line iterates over self.template_context_processors[name] inside the enclosing names loop; consider preparing the registered processor list once if its contents are stable.';
-  if (ruleId === 'EKB-COMP-001' && /^\s*(for|while)\b/.test(code) && /\n\s{0,7}(for|while)\b/.test(context)) return 'The shown loop is nested under another loop in this source context; check whether the inner pass can use a precomputed lookup.';
-  if (ruleId === 'EKB-COMP-002') return 'This assignment is inside the reported loop. If its inputs stay unchanged during the loop, compute it once before the loop.';
-  if (ruleId === 'EKB-IO-001' && confidence < 0.6) return 'The parser did not find an enclosing loop at this operation. It may be a helper called from elsewhere; verify the call path before changing it.';
-  if (ruleId === 'EKB-NET-001' && /\bsession\.(get|pop)\s*\(/.test(compact)) return 'This is a session mapping access in the displayed code, not evidence of a remote request; review this finding as a likely false positive.';
-  if (ruleId === 'EKB-MEM-001') return 'The reported line constructs a value within a loop. Check whether each iteration needs its own independent value before reusing or streaming it.';
-  if (ruleId === 'EKB-COMP-003') return 'The parser reports a recursive call path for this function; inspect the call site and stopping condition before converting it.';
-  return undefined;
+    const ruleName = RULE_NAMES[finding.rule_id] || finding.message || finding.rule_id;
+    const cardTitle = `${ruleName} · ${filename}:${issueLine || lineStart}`;
+
+    return [{
+      key: `${finding.rule_id}-${issueLine}-${index}`,
+      cardTitle,
+      original: contextOriginal,
+      replacement,
+      startLine: lineStart,
+      reason: '',
+    }];
+  });
+
+  return (
+    <div className="code-changes-file">
+      <div className="recommendations-summary-line">
+        <p>{validCards.length} of {totalCount} findings have code replacements.</p>
+      </div>
+      {validCards.length ? (
+        <div className="location-card-list">
+          {validCards.map(card => (
+            <article className="location-code-card" key={card.key}>
+              <header className="location-code-card-header">
+                <h3>{card.cardTitle}</h3>
+              </header>
+              {card.replacement ? <LocationCodeComparison
+                original={card.original}
+                replacement={card.replacement}
+                startLine={card.startLine}
+              /> : <p className="soft-copy">No safe rewrite: {card.reason}</p>}
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function ProjectCodeChangesSection({ projectResult, projectFiles, projectZipFile, excludeTestCode, targetPath, clearTargetPath }: {
@@ -248,53 +296,68 @@ function ProjectCodeChangesSection({ projectResult, projectFiles, projectZipFile
   clearTargetPath: () => void;
 }) {
   const [localSources, setLocalSources] = useState<Map<string, string>>(() => new Map());
-  const [copied, setCopied] = useState(false);
   const sourceScope = projectResult.timestamp || projectResult.project_name;
   const sourceKey = (path: string) => `${sourceScope}::${path.replace(/\\/g, '/').replace(/^\.\//, '')}`;
   const filesWithFindings = projectResult.files.filter(file =>
     file.status === 'success' && file.single_file_response?.pipeline_raw?.energy_smell_report?.findings?.length
   );
   const visibleFilesWithFindings = filesWithFindings.filter(file => (!excludeTestCode || !isTestOrExamplePath(file.relative_path)) && (!targetPath || file.relative_path === targetPath));
-  const groups = new Map<string, { ruleId: string; title: string; severity: string; locations: any[]; guidance: RuleGuidance }>();
+
+  let totalFindingsCount = 0;
+  for (const file of visibleFilesWithFindings) {
+    const rawFindings = file.single_file_response?.pipeline_raw?.energy_smell_report?.findings || [];
+    totalFindingsCount += rawFindings.length;
+  }
+
+  const validCards: {
+    key: string;
+    cardTitle: string;
+    original: string;
+    replacement: string;
+    startLine: number;
+    reason?: string;
+  }[] = [];
+
   for (const file of visibleFilesWithFindings) {
     const response = file.single_file_response!;
     const source = file.original_code || response.original_code || localSources.get(sourceKey(file.relative_path)) || '';
     const lines = source.split(/\r?\n/);
     const findings = response.pipeline_raw?.energy_smell_report?.findings || [];
-    for (const finding of findings) {
+    const suggestions = response.location_suggestions || [];
+
+    for (let index = 0; index < findings.length; index++) {
+      const finding = findings[index];
       const ruleId = finding.rule_id || 'UNKNOWN';
-      const recommendationList = Array.isArray(response.recommendations) ? response.recommendations : response.recommendations?.recommendations || [];
-      const recommendation = recommendationList.find((item: any) => item.rule_id === ruleId);
       const line = Number(finding.line_number) || 0;
-      const start = Math.max(0, line - 3);
-      const end = Math.min(lines.length, line + 2);
-      const context = line ? lines.slice(start, end).map((text, index) => `${start + index + 1}: ${text}`).join('\n') : '';
-      const code = line ? lines[line - 1] || '' : '';
-      const confidence = confidenceValue(finding);
-      const fix = (response.auto_applied_fixes || []).find((item: any) => item.rule_id === ruleId && (item.line_number === line || (item.line_start <= line && item.line_end >= line)));
-      const guidance = RULE_GUIDANCE[ruleId] || { title: recommendation?.title || finding.message || ruleId, what: finding.message || 'A static energy rule matched this location.', why: 'The effect depends on runtime inputs and execution frequency.', steps: ['Inspect the surrounding code and confirm the pattern.', 'Preserve behavior while reducing repeated work where applicable.'], before: '# Review this location', after: '# Apply a behavior-preserving change only if appropriate' };
-      if (!groups.has(ruleId)) groups.set(ruleId, { ruleId, title: guidance.title, severity: String(finding.severity || recommendation?.severity || 'medium'), locations: [], guidance });
-      groups.get(ruleId)!.locations.push({ file, finding, source, line, context, code, confidence, fix, hint: contextHint(ruleId, code, context, confidence) });
+      const suggestion = suggestions.find(item => item.rule_id === ruleId && item.line_number === (line || null));
+      const replacement = (suggestion?.replacement_code || '').trim();
+      if (!replacement) {
+        if (suggestion) validCards.push({ key: `${file.relative_path}:${ruleId}:${line}:${index}`,
+          cardTitle: `${RULE_NAMES[ruleId] || finding.message || ruleId} · ${file.relative_path}:${line || suggestion.line_start || 1}`,
+          original: suggestion.original_code || '', replacement: '', startLine: suggestion.line_start || Math.max(1, line),
+          reason: suggestion.reason || 'No safe rewrite is available for this finding.' });
+        continue;
+      }
+
+      const lineStart = suggestion?.line_start || Math.max(1, line - 3);
+      const original = (suggestion?.original_code || (line ? lines.slice(Math.max(0, line - 4), Math.min(lines.length, line + 3)).join('\n') : '')).trim();
+
+      if (!original || replacement === original) continue;
+
+      const ruleName = RULE_NAMES[ruleId] || finding.message || ruleId;
+      const cardTitle = `${ruleName} · ${file.relative_path}:${line || lineStart}`;
+
+      validCards.push({
+        key: `${file.relative_path}:${ruleId}:${line}:${index}`,
+        cardTitle,
+        original,
+        replacement,
+        startLine: lineStart,
+        reason: '',
+      });
     }
   }
-  const sortedGroups = [...groups.values()].sort((a, b) => a.ruleId.localeCompare(b.ruleId));
-  const visibleFindingCount = sortedGroups.reduce((sum, group) => sum + group.locations.length, 0);
-  const autoAppliedCount = sortedGroups.reduce((sum, group) => sum + group.locations.filter(location => location.fix?.is_auto_applied).length, 0);
-  const manualCount = visibleFindingCount - autoAppliedCount;
-  const reviewCount = sortedGroups.reduce((sum, group) => sum + group.locations.filter(location => location.confidence < 0.6 || Boolean(location.hint?.includes('Review needed') || location.hint?.includes('likely false positive'))).length, 0);
-  const markdownReport = () => ['# Recommendations', '', `${sortedGroups.length} rules · ${visibleFindingCount} locations · ${autoAppliedCount} auto-applied · ${manualCount} manual suggestions · ${reviewCount} need review`, '', ...sortedGroups.flatMap(group => [
-    `## ${group.ruleId} — ${group.title}`, `${group.locations.length} locations · ${new Set(group.locations.map(item => item.file.relative_path)).size} files · ${group.severity} severity · Modeled estimate, not measured.`, '', `**What it is:** ${group.guidance.what}`, `**Why it may cost energy:** ${group.guidance.why}`, '**How to fix:**', ...group.guidance.steps.map(step => `- ${step}`), '', '**Generic pattern, not generated from your code**', '```python', '# Before', group.guidance.before, '# After', group.guidance.after, '```', '', ...group.locations.map(location => `- ${location.file.relative_path}:${location.line} — ${confidenceLabel(location.confidence)} confidence${location.hint ? `; ${location.hint}` : ''}\n  \`${location.code.trim()}\``), ''
-  ])].join('\n');
-  const copyAll = async () => {
-    await navigator.clipboard.writeText(markdownReport());
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
-  };
-  const exportMarkdown = () => {
-    const blob = new Blob([markdownReport()], { type: 'text/markdown;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a'); anchor.href = url; anchor.download = `${projectResult.project_name || 'project'}-recommendations.md`; anchor.click(); URL.revokeObjectURL(url);
-  };
+
   useEffect(() => {
     let cancelled = false;
     const normalizePath = (value: string) => value.replace(/\\/g, '/').replace(/^\.\//, '');
@@ -328,31 +391,40 @@ function ProjectCodeChangesSection({ projectResult, projectFiles, projectZipFile
 
     return () => { cancelled = true; };
   }, [projectResult, projectFiles, projectZipFile, localSources]);
+
   return (
     <section className="panel suggested-code-section">
       <div className="panel-head">
-        <div><p className="overline">ISSUE-BY-ISSUE FIXES</p><h3>Suggested Code Changes</h3></div>
-        <span>{visibleFindingCount} finding location{visibleFindingCount === 1 ? '' : 's'} shown</span>
+        <div>
+          <p className="overline">ISSUE-BY-ISSUE FIXES</p>
+          <h3>Suggested Code Changes</h3>
+        </div>
       </div>
-      {targetPath && <p className="recommendation-target-note">Showing recommendations for <strong title={targetPath}>{targetPath}</strong> <button type="button" className="text-button" onClick={clearTargetPath}>Show all files</button></p>}
-      <div className="recommendation-summary">
-        <strong>{sortedGroups.length} rules · {visibleFindingCount} locations · {autoAppliedCount} auto-applied · {manualCount} manual suggestions · {reviewCount} need review</strong>
-        <span>Energy impacts are modeled estimates, not measured. Manual suggestions make no quantified savings promise.</span>
-        <div className="recommendation-export"><button className="small-button" onClick={copyAll}><Copy size={13} />{copied ? 'Copied Markdown' : 'Copy all recommendations'}</button><button className="small-button" onClick={exportMarkdown}><Download size={13} />Export as Markdown</button></div>
+      {targetPath && (
+        <p className="recommendation-target-note">
+          Showing recommendations for <strong title={targetPath}>{targetPath}</strong>{' '}
+          <button type="button" className="text-button" onClick={clearTargetPath}>Show all files</button>
+        </p>
+      )}
+      <div className="recommendations-summary-line">
+        <p>{validCards.length} of {totalFindingsCount} findings have code replacements.</p>
       </div>
-      {sortedGroups.length ? <div className="rule-recommendation-list">{sortedGroups.map(group => {
-        const autoLocations = group.locations.filter(location => location.fix?.is_auto_applied && location.fix?.replacement_code);
-        const manualLocations = group.locations.filter(location => !location.fix?.is_auto_applied);
-        const reviewLocations = group.locations.filter(location => location.confidence < 0.6 || Boolean(location.hint?.includes('Review needed') || location.hint?.includes('likely false positive')));
-        return <article className="rule-recommendation-card" key={group.ruleId}>
-          <header className="rule-recommendation-head"><div><p className="overline">{group.ruleId}</p><h3>{group.title}</h3></div><div className="rule-summary-badges"><span>{group.locations.length} locations</span><span>{new Set(group.locations.map(item => item.file.relative_path)).size} files</span><span className={`severity-pill severity-${group.severity.toLowerCase()}`}>{group.severity} severity</span><span className="modeled-impact-pill">Modeled estimate · not measured</span></div></header>
-          <section className="rule-guidance"><h4>Suggested change (manual)</h4><p><strong>What it is:</strong> {group.guidance.what}</p><p><strong>Why it may cost energy:</strong> {group.guidance.why}</p><p><strong>How to fix:</strong></p><ol>{group.guidance.steps.map(step => <li key={step}>{step}</li>)}</ol><details className="generic-pattern-details"><summary>Generic pattern, not generated from your code</summary><div className="generic-pattern-columns"><section><strong>Before</strong><PythonCodeBlock code={group.guidance.before} /></section><section><strong>After</strong><PythonCodeBlock code={group.guidance.after} /></section></div></details></section>
-          {autoLocations.map((location, index) => <section className="recommendation-tier auto-applied-tier" key={`auto-${location.file.relative_path}-${location.line}-${index}`}><h4>Auto-applied (verified)</h4><p>Real replacement accepted after re-analysis. This is the verified replacement for this location.</p><div className="diff-columns"><section><strong>Before</strong><PythonCodeBlock code={location.fix.original_code || ''} startLine={location.fix.line_start || location.line} /></section><section><strong>After</strong><PythonCodeBlock code={location.fix.replacement_code} startLine={location.fix.line_start || location.line} /></section></div></section>)}
-          {reviewLocations.length > 0 && <section className="recommendation-tier review-tier"><h4>Review needed / possible false positive <span>{reviewLocations.length} locations</span></h4><p>Confirm that the detected operation is real and repeated before applying the manual guidance.</p></section>}
-          {manualLocations.length > 0 && <p className="manual-tier-label">Suggested change (manual) applies to {manualLocations.length} location{manualLocations.length === 1 ? '' : 's'}; inspect each occurrence below.</p>}
-          <details className="rule-locations"><summary>Show {group.locations.length} locations</summary><div className="rule-location-list">{group.locations.map((location, index) => <details className="rule-location" key={`${location.file.relative_path}:${location.line}:${index}`}><summary><strong>{location.file.relative_path}:{location.line || 'line unavailable'}</strong><span className={`confidence-pill confidence-${confidenceLabel(location.confidence).toLowerCase()}`}>{confidenceLabel(location.confidence)} confidence ({location.confidence.toFixed(2)})</span>{isTestOrExamplePath(location.file.relative_path) && <span className="test-code-pill">Test code</span>}</summary><div className="location-context"><div><strong>Source context · lines {Math.max(1, location.line - 2)}–{location.line + 2}</strong><button className="small-button" onClick={() => navigator.clipboard.writeText(location.context)}><Copy size={12} />Copy context</button></div>{location.context ? <PythonCodeBlock code={location.context.split('\n').map((row: string) => row.replace(/^\d+: /, '')).join('\n')} startLine={Math.max(1, location.line - 2)} /> : <p>Source context is unavailable.</p>}{location.hint && <p className={`location-hint ${location.confidence < 0.6 || location.hint.includes('Review needed') || location.hint.includes('likely false positive') ? 'is-review' : ''}`}>{location.hint}</p>}</div></details>)}</div></details>
-        </article>;
-      })}</div> : <p className="code-unavailable">No issue-specific findings were returned for the selected files.</p>}
+      {validCards.length ? (
+        <div className="location-card-list">
+          {validCards.map(card => (
+            <article className="location-code-card" key={card.key}>
+              <header className="location-code-card-header">
+                <h3>{card.cardTitle}</h3>
+              </header>
+              {card.replacement ? <LocationCodeComparison
+                original={card.original}
+                replacement={card.replacement}
+                startLine={card.startLine}
+              /> : <p className="soft-copy">No safe rewrite: {card.reason}</p>}
+            </article>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -2013,17 +2085,15 @@ export default function App() {
             <section className="panel suggested-code-section">
               <div className="panel-head">
                 <div><p className="overline">ISSUE-BY-ISSUE FIXES</p><h3>Suggested Code Changes</h3></div>
-                <span>{singleVisibleFindings.length} finding location{singleVisibleFindings.length === 1 ? '' : 's'} shown{singleFileIsTestCode ? ` · Test code ${excludeTestCode ? 'excluded' : 'included'}` : ''}</span>
               </div>
               <CodeChangesSection
                 filename={result.filename || filename}
                 sourceCode={code || result.original_code || ''}
-                optimizedCode={result.optimized_code}
                 findings={singleVisibleFindings}
                 autoFixes={result.auto_applied_fixes || []}
                 manualFixes={result.manual_fixes || []}
                 recommendations={recommendations}
-                shownGenericPatterns={new Set<string>()}
+                locationSuggestions={result.location_suggestions || []}
               />
             </section>
           </section>

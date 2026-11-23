@@ -26,6 +26,10 @@ class RecursiveComputationDetector:
             if not function.is_recursive:
                 continue
 
+            # Class initializers (__init__) are not recursive computation algorithms
+            if function.name == "__init__":
+                continue
+
             candidates.append(
                 Candidate.create(
                     rule_id=self.RULE_ID,

@@ -84,6 +84,8 @@ class AnalyzeResponse(BaseModel):
     optimized_code: str = Field(default="", description="Transformed Python source code with automated refactoring")
     auto_applied_fixes: list[dict[str, Any]] = Field(default_factory=list, description="Automated AST fixes applied")
     manual_fixes: list[dict[str, Any]] = Field(default_factory=list, description="Manual fixes required per recommendation")
+    location_suggestions: list[dict[str, Any]] = Field(default_factory=list, description="Source-derived original and replacement code per finding location")
+    ai_suggestions_unavailable: bool = Field(False, description="Whether AI rewrite fallback is unavailable because no provider is configured or calls failed")
     estimated_impact: dict[str, Any] = Field(default_factory=dict, description="Modeled before/after impact estimate")
     measured_runtime: dict[str, Any] = Field(default_factory=dict, description="Empirical sandboxed runtime measurement")
     post_refactor_estimation: dict[str, Any] = Field(default_factory=dict, description="Comprehensive post-recommendation estimation breakdown")
