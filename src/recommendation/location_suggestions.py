@@ -11,11 +11,13 @@ from __future__ import annotations
 import ast
 import builtins
 import copy
+import difflib
 import operator
 import symtable
 import textwrap
 from typing import Any
 from collections.abc import Callable
+from .transformer import recommend
 
 # Import roots with API patterns whose behavior is context dependent. Keep this
 # table data-only so adding a library never adds a library-specific rewrite.
@@ -52,6 +54,20 @@ def _names(node: ast.AST) -> set[str]:
 
 def _source(node: ast.AST, source: str) -> str:
     return ast.get_source_segment(source, node) or ""
+
+
+def _changed_region(original: str, rewritten: str) -> tuple[int, int, str, str] | None:
+    before = original.splitlines(keepends=True)
+    after = rewritten.splitlines(keepends=True)
+    changes = [opcode for opcode in difflib.SequenceMatcher(None, before, after, autojunk=False).get_opcodes() if opcode[0] != "equal"]
+    if len(changes) != 1:
+        return None
+    _, old_start, old_end, new_start, new_end = changes[0]
+    original_region = "".join(before[old_start:old_end])
+    replacement_region = "".join(after[new_start:new_end])
+    if not original_region or not replacement_region:
+        return None
+    return old_start + 1, old_end, original_region, replacement_region
 
 
 def _constant_expression(node: ast.AST) -> bool:
@@ -125,8 +141,21 @@ def _exact_rewrite(tree: ast.AST, source: str, line: int, rule_id: str) -> tuple
         if membership:
             return membership
 
-    # Hoisting an assignment can change whether a name exists after a loop
-    # with zero iterations. Do not propose it without control-flow analysis.
+    # EKB-COMP-002: hoist literal-only invariant assignments. Constant
+    # expressions are evaluated safely before display and cannot read mutated
+    # state or perform calls.
+    if rule_id == "EKB-COMP-002" and isinstance(loop, (ast.For, ast.AsyncFor, ast.While)):
+        for statement in loop.body:
+            if isinstance(statement, ast.Assign) and _constant_expression(statement.value):
+                if not (_names(statement.value) & _names(loop.target if isinstance(loop, (ast.For, ast.AsyncFor)) else loop.test)):
+                    body = [item for item in loop.body if item is not statement]
+                    rewritten_loop = ast.For(loop.target, loop.iter, body, loop.orelse, type_comment=getattr(loop, "type_comment", None)) if isinstance(loop, ast.For) else (
+                        ast.AsyncFor(loop.target, loop.iter, body, loop.orelse, type_comment=getattr(loop, "type_comment", None)) if isinstance(loop, ast.AsyncFor)
+                        else ast.While(loop.test, body, loop.orelse)
+                    )
+                    module = ast.Module(body=[statement, rewritten_loop], type_ignores=[])
+                    ast.fix_missing_locations(module)
+                    return ast.unparse(module), "Hoisted a literal-only invariant assignment above its loop."
 
     # EKB-IO-001: hoist repeated file handle opening outside the loop
     if rule_id == "EKB-IO-001" and isinstance(loop, (ast.For, ast.AsyncFor, ast.While)):
@@ -281,7 +310,7 @@ def _review_reason(rule_id: str, code: str, line: int) -> str:
     if rule_id == "EKB-COMP-001":
         return "Nested-loop changes can affect iteration order, duplicate handling, and loop-variable bindings; no safe rewrite was proven."
     if rule_id == "EKB-COMP-002":
-        return "Moving an expression can change evaluation count, exceptions, or state; no proof of loop invariance and unchanged scope is available."
+        return "Hoisting can bind a variable even when the loop runs zero times; evaluation count, exceptions, and scope are not proven safe."
     if rule_id in {"EKB-IO-001", "EKB-IO-002"}:
         return "Moving file access can change file position, truncation, closing, and error timing; no safe rewrite was proven."
     if rule_id == "EKB-NET-001":
@@ -351,29 +380,63 @@ def build_location_suggestions(
             if outer_loops:
                 loop = max(outer_loops, key=lambda node: _line_span(node)[1] - _line_span(node)[0])
         original_block = _source(loop, source_code) if loop else original
+        suggestion_start = int(getattr(loop, "lineno", start)) if loop else start
+        suggestion_end = int(getattr(loop, "end_lineno", end)) if loop else end
         confidence = "No safe rewrite"
         status = "no_safe_rewrite"
         replacement = ""
         ai_unavailable = True
         reason = _framework_review_reason(tree, rule_id) or _review_reason(rule_id, lines[line - 1] if 0 < line <= len(lines) else "", line)
+        diff_text = None
+        transformer_name = None
+        candidate = recommend(source_code, finding, analyzer)
+        if candidate:
+            if candidate.get("replacement_code") and candidate["transformer"].startswith("template_"):
+                changed = (
+                    int(candidate.get("line_start", 1)),
+                    int(candidate.get("line_end", 1)),
+                    candidate.get("original_code", ""),
+                    candidate["replacement_code"],
+                )
+            else:
+                changed = _changed_region(source_code, candidate["new_source"])
+            if changed:
+                line_start, line_end, original_block, replacement = changed
+                suggestion_start, suggestion_end = line_start, line_end
+                diff_text = candidate["diff"]
+                transformer_name = candidate["transformer"]
+                confidence, status = ("Verified", "verified") if not transformer_name.startswith("template_") else ("Template", "template")
+                if status == "verified":
+                    reason = "Registered transformer passed the syntax, name, and analyzer gate."
+                else:
+                    reason = f"{reason} Deterministic local template; compile-checked, review behavior before applying."
+            elif candidate.get("replacement_code"):
+                replacement = candidate["replacement_code"]
+                original_block = candidate.get("original_code", original_block)
+                suggestion_start = int(candidate.get("line_start", suggestion_start))
+                suggestion_end = int(candidate.get("line_end", suggestion_end))
+                transformer_name = candidate["transformer"]
+                confidence, status = "Template", "template"
+                reason = f"{reason} Deterministic local template; compile-checked, review behavior before applying."
+        elif rule_id == "EKB-MEM-001":
+            from src.recommendation.transformer import concat_to_join_refusal
+            reason = concat_to_join_refusal(source_code, finding)
         matching_fix = next((fix for fix in fixes if fix.get("rule_id") == rule_id and fix.get("is_auto_applied") and fix.get("replacement_code") and (fix.get("line_number") == line or (int(fix.get("line_start") or 0) <= line <= int(fix.get("line_end") or 0)))), None)
-        if matching_fix and test_runner:
+        if matching_fix and rule_id != "EKB-MEM-001" and not replacement and test_runner:
             candidate_text = str(matching_fix["replacement_code"]).strip()
             if loop and _passes_block_gate(original_block, candidate_text):
                 rewritten_source = _replace_node_in_module(tree, loop, candidate_text) or _replace_source_block(source_code, loop, candidate_text)
-                if rewritten_source and test_runner(rewritten_source) and analyzer and _passes_file_gate(source_code, rewritten_source, rule_id, findings, analyzer):
+                tests_pass = test_runner(rewritten_source)
+                if rewritten_source and tests_pass and (analyzer is None or _passes_file_gate(source_code, rewritten_source, rule_id, findings, analyzer)):
                     replacement = candidate_text
                     confidence, status = "Verified", "verified"
                     reason = "Auto-applied AST change passed re-analysis."
-        if not replacement:
-            # A replacement must be exercised in an isolated test copy before
-            # it can be shown. The API currently has no test-copy runner, so
-            # it fails closed until that verification is available.
-            candidate = _exact_rewrite(tree, source_code, line, rule_id) if loop and test_runner else None
+        if not replacement and rule_id != "EKB-MEM-001":
+            candidate = _exact_rewrite(tree, source_code, line, rule_id) if loop and rule_id != "EKB-MEM-001" and test_runner else None
             if candidate and analyzer:
                 candidate_text, candidate_reason = candidate
                 rewritten_source = _replace_node_in_module(tree, loop, candidate_text)
-                tests_pass = bool(rewritten_source and test_runner and test_runner(rewritten_source))
+                tests_pass = bool(rewritten_source and test_runner(rewritten_source))
                 if rewritten_source and tests_pass and _passes_block_gate(original_block, candidate_text) and _passes_file_gate(source_code, rewritten_source, rule_id, findings, analyzer):
                     replacement = candidate_text
                     reason = candidate_reason
@@ -382,21 +445,23 @@ def build_location_suggestions(
                     reason = "The AST rewrite did not pass syntax, statement-change, or analyzer re-checks."
             elif not analyzer:
                 reason = "The analyzer re-check is unavailable, so this candidate cannot be shown as a recommendation."
-        if not replacement and rule_id == "EKB-COMP-002":
-            reason = "No safe rewrite: hoisting may change variable binding when the loop runs zero times or when control flow skips the assignment."
         if status == "no_safe_rewrite" and not reason:
             reason = "No candidate passed syntax, statement-change, analyzer, and undefined-name checks."
         suggestions.append({
             "rule_id": rule_id,
             "line_number": line or None,
-            "line_start": int(getattr(loop, "lineno", start)) if loop else start,
-            "line_end": int(getattr(loop, "end_lineno", end)) if loop else end,
+            "line_start": suggestion_start,
+            "line_end": suggestion_end,
             "original_code": original_block or original,
             "replacement_code": replacement or None,
+            "original": original_block or original,
+            "replacement": replacement or None,
             "confidence": confidence,
             "status": status,
             "reason": reason,
             "ai_unavailable": ai_unavailable,
+            "diff": diff_text,
+            "transformer": transformer_name,
         })
     return suggestions
 

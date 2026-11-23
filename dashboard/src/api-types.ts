@@ -129,6 +129,10 @@ export interface LocationSuggestion {
   line_end: number;
   original_code: string;
   replacement_code: string | null;
+  original?: string;
+  replacement?: string | null;
+  diff?: string | null;
+  transformer?: string | null;
   confidence: 'Verified' | 'Suggested' | 'AI-suggested, verified by re-analysis' | 'Review needed' | 'No safe rewrite';
   status: 'verified' | 'suggested' | 'ai_suggested' | 'review_needed' | 'no_safe_rewrite';
   reason: string;

@@ -7,3 +7,4 @@ python-dotenv
 fastapi
 uvicorn
 python-multipart
+pyflakes>=3.2

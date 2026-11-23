@@ -78,8 +78,6 @@ app = FastAPI(
 )
 
 router = APIRouter()
-
-
 def modeled_fix_is_acceptable(
     *, energy_before: float, energy_after: float, cirs_before: float, cirs_after: float,
     ess_before: float, ess_after: float, sci_before: float, sci_after: float,

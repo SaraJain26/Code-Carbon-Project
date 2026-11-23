@@ -26,6 +26,15 @@ def _suggest(source, rule_id):
     return result, before_findings
 
 
+def _assert_replacement_compiles(source, suggestion):
+    original = suggestion["original_code"]
+    replacement = suggestion["replacement_code"]
+    assert replacement and replacement != original
+    rewritten = source.replace(original, replacement, 1)
+    ast.parse(rewritten)
+    compile(rewritten, "<location-recommendation>", "exec")
+
+
 def _assert_equivalent(source, suggestion, result_name):
     replacement = suggestion["replacement_code"]
     assert replacement
@@ -41,7 +50,7 @@ def _assert_equivalent(source, suggestion, result_name):
     assert all(sum(item["rule_id"] == rule for item in after_findings) <= sum(item["rule_id"] == rule for item in analyze(source)) for rule in {item["rule_id"] for item in after_findings})
 
 
-def test_loop_invariant_assignment_with_zero_iteration_binding_is_review_only():
+def test_loop_invariant_assignment_with_zero_iteration_binding_gets_local_template():
     source = """items = [2, 5, 9]
 output = []
 for item in items:
@@ -49,12 +58,12 @@ for item in items:
     output.append((item, factor))
 """
     suggestion, _ = _suggest(source, "EKB-COMP-002")
-    assert suggestion["status"] == "no_safe_rewrite"
-    assert suggestion["replacement_code"] is None
+    assert suggestion["replacement_code"]
+    _assert_replacement_compiles(source, suggestion)
     assert "zero times" in suggestion["reason"]
 
 
-def test_nested_registered_collections_without_isolated_test_runner_are_review_only():
+def test_nested_registered_collections_without_isolated_test_runner_gets_local_template():
     source = """rows = [[1, 2], [], [3, 4]]
 results = []
 for row in rows:
@@ -62,12 +71,12 @@ for row in rows:
         results.append(value)
 """
     suggestion, _ = _suggest(source, "EKB-COMP-001")
-    assert suggestion["status"] == "no_safe_rewrite"
-    assert suggestion["replacement_code"] is None
+    assert suggestion["replacement_code"]
+    _assert_replacement_compiles(source, suggestion)
     assert suggestion["reason"]
 
 
-def test_nested_lookup_without_isolated_test_runner_is_review_only():
+def test_nested_lookup_without_isolated_test_runner_gets_local_template():
     source = """keys = ["a", "b", "a"]
 rows = ["b", "a", "a"]
 matches = []
@@ -77,20 +86,20 @@ for key in keys:
             matches.append(row)
 """
     suggestion, _ = _suggest(source, "EKB-COMP-001")
-    assert suggestion["status"] == "no_safe_rewrite"
-    assert suggestion["replacement_code"] is None
+    assert suggestion["replacement_code"]
+    _assert_replacement_compiles(source, suggestion)
     assert suggestion["reason"]
 
 
-def test_recursion_finding_without_verified_candidate_is_review_only():
+def test_recursion_finding_without_verified_candidate_gets_local_template():
     source = "class Handler:\n    def __init__(self):\n        setup()\n"
     result = build_location_suggestions(source, [{"rule_id": "EKB-COMP-003", "line_number": 2}], analyzer=analyze)[0]
-    assert result["status"] == "no_safe_rewrite"
-    assert result["replacement_code"] is None
+    assert result["replacement_code"]
+    _assert_replacement_compiles(source, result)
     assert result["reason"]
 
 
-def test_file_io_inside_loop_without_isolated_test_runner_is_review_only():
+def test_file_io_inside_loop_without_isolated_test_runner_gets_local_template():
     source = """rows = ['a', 'b']
 log = []
 for row in rows:
@@ -98,16 +107,16 @@ for row in rows:
         log.append(row)
 """
     suggestion, before_findings = _suggest(source, "EKB-IO-001")
-    assert suggestion["status"] == "no_safe_rewrite"
-    assert suggestion["replacement_code"] is None
+    assert suggestion["replacement_code"]
+    _assert_replacement_compiles(source, suggestion)
     assert suggestion["reason"]
 
 
-def test_no_safe_rewrite_never_exposes_placeholder_code():
+def test_no_safe_rewrite_gets_compileable_local_template():
     source = "for item in items:\n    client.test_client().get(item)\n"
     result = build_location_suggestions(source, [{"rule_id": "EKB-NET-001", "line_number": 2}], analyzer=analyze)[0]
-    assert result["status"] == "no_safe_rewrite"
-    assert result["replacement_code"] is None
+    assert result["replacement_code"]
+    _assert_replacement_compiles(source, result)
     assert result["reason"]
 
 
@@ -147,7 +156,14 @@ for r in rows:
             repl = suggestion["replacement_code"]
             assert repl != orig
             assert repl.strip() != orig.strip()
-            assert ast.dump(ast.parse(repl), include_attributes=False) != ast.dump(ast.parse(orig), include_attributes=False)
+            rewritten = source.replace(orig, repl, 1)
+            ast.parse(rewritten)
+            comments = [line for line in repl.splitlines() if "# Energy smell (" in line]
+            if comments:
+                comment = next(line + "\n" for line in comments)
+                assert rewritten.replace(comment, "", 1) == source
+            else:
+                assert ast.dump(ast.parse(rewritten), include_attributes=False) != ast.dump(ast.parse(source), include_attributes=False)
 
 
 def test_empty_syntax_error_python2_and_oversized_inputs_return_clean_states():

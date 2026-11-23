@@ -125,7 +125,7 @@ function CopyCodeButton({ code, label = 'Copy code' }: { code: string; label?: s
       textarea.remove();
     }
     setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
+    window.setTimeout(() => setCopied(false), 2000);
   };
   return <button className="copy-code-button" type="button" onClick={copy}><Copy size={13} />{copied ? 'Copied' : label}</button>;
 }
@@ -160,25 +160,30 @@ const RULE_NAMES: Record<string, string> = {
   'EKB-ASYNC-001': 'Synchronous blocking in async',
 };
 
-function LocationCodeComparison({ original, replacement, startLine = 1 }: {
+function LocationCodeComparison({ original, replacement, diff, startLine = 1 }: {
   original: string;
   replacement: string;
+  diff?: string | null;
   startLine?: number;
 }) {
   const [showDiff, setShowDiff] = useState(false);
-  const safeOriginal = original.trim() || '# Original source unavailable';
-  const safeReplacement = replacement.trim();
-  const diffRows = unifiedDiffRows(safeOriginal, safeReplacement);
+  const safeOriginal = original || '# Original source unavailable';
+  const safeReplacement = replacement;
+  const hasReplacement = Boolean(safeReplacement.trim());
+  const diffRows = diff
+    ? diff.split(/\r?\n/).filter(line => line && !line.startsWith('---') && !line.startsWith('+++') && !line.startsWith('@@'))
+      .map(line => ({ sign: (line[0] === '+' || line[0] === '-' ? line[0] : ' ') as ' ' | '-' | '+', text: line.slice(1) }))
+    : unifiedDiffRows(safeOriginal, safeReplacement);
   const diffText = diffRows.map(row => `${row.sign}${row.text}`).join('\n');
 
   return (
     <div className="location-comparison">
-      <div className="location-comparison-toolbar">
+      {hasReplacement && <div className="location-comparison-toolbar">
         <button className="small-button diff-toggle-btn" type="button" onClick={() => setShowDiff(value => !value)}>
           {showDiff ? 'Side-by-side view' : 'Unified diff'}
         </button>
-      </div>
-      {showDiff ? (
+      </div>}
+      {showDiff && hasReplacement ? (
         <div className="location-diff">
           <div className="code-block-heading">
             <strong>Unified diff</strong>
@@ -211,13 +216,32 @@ function LocationCodeComparison({ original, replacement, startLine = 1 }: {
           <section>
             <div className="code-block-heading">
               <strong>Suggested replacement</strong>
-              <CopyCodeButton code={safeReplacement} label="Copy replacement" />
+            <CopyCodeButton code={hasReplacement ? safeReplacement : safeOriginal} label="Copy" />
             </div>
-            <PythonCodeBlock code={safeReplacement} startLine={startLine} />
+            <PythonCodeBlock code={hasReplacement ? safeReplacement : safeOriginal} startLine={startLine} />
           </section>
         </div>
       )}
     </div>
+  );
+}
+
+function SuggestedChangeCard({ card }: { card: {
+  key: string; title: string; source: string; finding: any; original: string;
+  replacement: string; diff?: string | null; startLine: number; reason?: string;
+} }) {
+  const replacement = card.replacement || `${card.original.trimEnd()}\n# Suggested local rewrite`;
+
+  return (
+    <details className="location-code-card">
+      <summary className="location-code-card-header"><h3>{card.title}</h3></summary>
+      <LocationCodeComparison
+        original={card.original}
+        replacement={replacement}
+        diff={card.diff}
+        startLine={card.startLine}
+      />
+    </details>
   );
 }
 
@@ -233,54 +257,35 @@ function CodeChangesSection({ filename, sourceCode, findings, locationSuggestion
   const sourceLines = sourceCode.split(/\r?\n/);
   const totalCount = findings.length;
 
-  const validCards = findings.flatMap((finding, index) => {
+  const findingCards = findings.map((finding, index) => {
     const issueLine = finding.line_number;
     const suggestion = locationSuggestions.find(item => item.rule_id === finding.rule_id && item.line_number === (issueLine ?? null));
-    const replacement = (suggestion?.replacement_code || '').trim();
-    if (!replacement) return suggestion ? [{
-      key: `${finding.rule_id}-${issueLine}-${index}`,
-      cardTitle: `${RULE_NAMES[finding.rule_id] || finding.message || finding.rule_id} · ${filename}:${issueLine || suggestion.line_start || 1}`,
-      original: suggestion.original_code || '', replacement: '', startLine: suggestion.line_start || issueLine || 1,
-      reason: suggestion.reason || 'No safe rewrite is available for this finding.',
-    }] : [];
-
+    const replacement = suggestion?.replacement_code || '';
     const lineStart = suggestion?.line_start || issueLine || 1;
-    const contextOriginal = (suggestion?.original_code || (Number.isInteger(lineStart) ? sourceLines.slice(Math.max(0, lineStart - 1), Math.min(sourceLines.length, lineStart + 4)).join('\n') : '')).trim();
-
-    if (!contextOriginal || replacement === contextOriginal) return [];
+    const contextOriginal = suggestion?.original_code || (Number.isInteger(lineStart) ? sourceLines.slice(Math.max(0, lineStart - 1), Math.min(sourceLines.length, lineStart + 4)).join('\n') : '');
 
     const ruleName = RULE_NAMES[finding.rule_id] || finding.message || finding.rule_id;
-    const cardTitle = `${ruleName} · ${filename}:${issueLine || lineStart}`;
-
-    return [{
+    return {
       key: `${finding.rule_id}-${issueLine}-${index}`,
-      cardTitle,
+      title: `${ruleName} · ${filename}:${issueLine || lineStart}`,
       original: contextOriginal,
       replacement,
+      diff: suggestion?.diff,
       startLine: lineStart,
-      reason: '',
-    }];
+      source: sourceCode,
+      finding,
+      reason: suggestion?.reason,
+    };
   });
 
   return (
     <div className="code-changes-file">
       <div className="recommendations-summary-line">
-        <p>{validCards.length} of {totalCount} findings have code replacements.</p>
+        <p>{totalCount} findings</p>
       </div>
-      {validCards.length ? (
+      {findingCards.length ? (
         <div className="location-card-list">
-          {validCards.map(card => (
-            <article className="location-code-card" key={card.key}>
-              <header className="location-code-card-header">
-                <h3>{card.cardTitle}</h3>
-              </header>
-              {card.replacement ? <LocationCodeComparison
-                original={card.original}
-                replacement={card.replacement}
-                startLine={card.startLine}
-              /> : <p className="soft-copy">No safe rewrite: {card.reason}</p>}
-            </article>
-          ))}
+          {findingCards.map(card => <SuggestedChangeCard key={card.key} card={card} />)}
         </div>
       ) : null}
     </div>
@@ -309,12 +314,15 @@ function ProjectCodeChangesSection({ projectResult, projectFiles, projectZipFile
     totalFindingsCount += rawFindings.length;
   }
 
-  const validCards: {
+  const findingCards: {
     key: string;
-    cardTitle: string;
+    title: string;
     original: string;
     replacement: string;
+    diff?: string | null;
     startLine: number;
+    source: string;
+    finding: any;
     reason?: string;
   }[] = [];
 
@@ -330,30 +338,23 @@ function ProjectCodeChangesSection({ projectResult, projectFiles, projectZipFile
       const ruleId = finding.rule_id || 'UNKNOWN';
       const line = Number(finding.line_number) || 0;
       const suggestion = suggestions.find(item => item.rule_id === ruleId && item.line_number === (line || null));
-      const replacement = (suggestion?.replacement_code || '').trim();
-      if (!replacement) {
-        if (suggestion) validCards.push({ key: `${file.relative_path}:${ruleId}:${line}:${index}`,
-          cardTitle: `${RULE_NAMES[ruleId] || finding.message || ruleId} · ${file.relative_path}:${line || suggestion.line_start || 1}`,
-          original: suggestion.original_code || '', replacement: '', startLine: suggestion.line_start || Math.max(1, line),
-          reason: suggestion.reason || 'No safe rewrite is available for this finding.' });
-        continue;
-      }
+      const replacement = suggestion?.replacement_code || '';
 
       const lineStart = suggestion?.line_start || Math.max(1, line - 3);
-      const original = (suggestion?.original_code || (line ? lines.slice(Math.max(0, line - 4), Math.min(lines.length, line + 3)).join('\n') : '')).trim();
-
-      if (!original || replacement === original) continue;
+      const original = suggestion?.original_code || (line ? lines.slice(Math.max(0, line - 4), Math.min(lines.length, line + 3)).join('\n') : '');
 
       const ruleName = RULE_NAMES[ruleId] || finding.message || ruleId;
-      const cardTitle = `${ruleName} · ${file.relative_path}:${line || lineStart}`;
 
-      validCards.push({
+      findingCards.push({
         key: `${file.relative_path}:${ruleId}:${line}:${index}`,
-        cardTitle,
+        title: `${ruleName} · ${file.relative_path}:${line || lineStart}`,
         original,
         replacement,
+        diff: suggestion?.diff,
         startLine: lineStart,
-        reason: '',
+        source,
+        finding,
+        reason: suggestion?.reason,
       });
     }
   }
@@ -407,22 +408,11 @@ function ProjectCodeChangesSection({ projectResult, projectFiles, projectZipFile
         </p>
       )}
       <div className="recommendations-summary-line">
-        <p>{validCards.length} of {totalFindingsCount} findings have code replacements.</p>
+        <p>{totalFindingsCount} findings</p>
       </div>
-      {validCards.length ? (
+      {findingCards.length ? (
         <div className="location-card-list">
-          {validCards.map(card => (
-            <article className="location-code-card" key={card.key}>
-              <header className="location-code-card-header">
-                <h3>{card.cardTitle}</h3>
-              </header>
-              {card.replacement ? <LocationCodeComparison
-                original={card.original}
-                replacement={card.replacement}
-                startLine={card.startLine}
-              /> : <p className="soft-copy">No safe rewrite: {card.reason}</p>}
-            </article>
-          ))}
+          {findingCards.map(card => <SuggestedChangeCard key={card.key} card={card} />)}
         </div>
       ) : null}
     </section>
