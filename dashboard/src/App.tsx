@@ -1161,7 +1161,7 @@ export default function App() {
 
   const scanDataTransferItems = async (items: DataTransferItemList): Promise<ScannedFile[]> => {
     const scanned: ScannedFile[] = [];
-    const skipDirs = new Set(['.git', '__pycache__', 'venv', 'env', 'node_modules', 'dist', 'build', 'temp_analysis', 'scratch', '.pytest_cache', '.idea', '.vscode']);
+    const skipDirs = new Set(['.git', '__pycache__', 'venv', 'env', 'node_modules', 'dist', 'build', '.pytest_cache', '.idea', '.vscode']);
 
     const scanEntry = async (entry: any, currentPath: string = '') => {
       if (!entry) return;
@@ -1280,7 +1280,7 @@ export default function App() {
   const handleFolderSelect = async (filesList: FileList) => {
     setNotice(null);
     const pyFiles: ScannedFile[] = [];
-    const skipDirs = ['.git/', '__pycache__/', 'venv/', 'env/', 'node_modules/', 'dist/', 'build/', 'temp_analysis/', 'scratch/', '.pytest_cache/'];
+    const skipDirs = ['.git/', '__pycache__/', 'venv/', 'env/', 'node_modules/', 'dist/', 'build/', '.pytest_cache/'];
 
     for (let i = 0; i < filesList.length; i++) {
       const file = filesList[i];

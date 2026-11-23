@@ -1115,7 +1115,7 @@ async def analyze_project(
                             continue
                         name = zip_info.filename
                         parts = Path(name).parts
-                        if any(p.startswith(".") or p in ("__pycache__", "venv", "env", "node_modules", "dist", "build", "temp_analysis", "scratch", ".pytest_cache") for p in parts):
+                        if any(p.startswith(".") or p in ("__pycache__", "venv", "env", "node_modules", "dist", "build", ".pytest_cache") for p in parts):
                             continue
                         if name.lower().endswith(".py"):
                             file_data = zf.read(zip_info)
