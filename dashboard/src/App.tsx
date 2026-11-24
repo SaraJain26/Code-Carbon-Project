@@ -492,8 +492,63 @@ import mammoth from 'mammoth';
 import JSZip from 'jszip';
 import './App.css';
 
-const rawApiUrl = (import.meta.env.VITE_API_URL || '/api').trim().replace(/\/+$/, '');
+const defaultApiUrl = import.meta.env.DEV
+  ? '/api'
+  : 'https://code-carbon-projectuvicorn-api-main-app.onrender.com/api';
+const rawApiUrl = (import.meta.env.VITE_API_URL || defaultApiUrl).trim().replace(/\/+$/, '');
 const API = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl}/api`;
+const apiRequestUrl = (path: string) => new URL(`${API}${path}`, window.location.href).toString();
+const API_REQUEST_TIMEOUT_MS = 70_000;
+const SERVER_WAKEUP_MESSAGE = 'Waking up the server, this can take up to a minute.';
+let initialApiRequestStarted = false;
+
+async function fetchApi(
+  requestUrl: string,
+  options: RequestInit = {},
+  setRequestNotice?: (message: string | null) => void,
+): Promise<Response> {
+  const absoluteUrl = new URL(requestUrl, window.location.href).toString();
+  const isInitialRequest = !initialApiRequestStarted;
+  initialApiRequestStarted = true;
+  const attempts = isInitialRequest ? 2 : 1;
+
+  if (isInitialRequest) setRequestNotice?.(SERVER_WAKEUP_MESSAGE);
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, API_REQUEST_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(absoluteUrl, { ...options, signal: controller.signal });
+      if (isInitialRequest && attempt === 0 && [502, 503, 504].includes(response.status)) {
+        try { await response.body?.cancel(); } catch { /* Retry the first request once. */ }
+        continue;
+      }
+      if (isInitialRequest) setRequestNotice?.(null);
+      return response;
+    } catch (error) {
+      const isAbort = error instanceof DOMException && error.name === 'AbortError';
+      const retryable = timedOut || isAbort || error instanceof TypeError;
+      if (isInitialRequest && attempt === 0 && retryable) continue;
+      if (timedOut) {
+        throw new Error(`Request to ${absoluteUrl} timed out after ${API_REQUEST_TIMEOUT_MS / 1000} seconds.`);
+      }
+      if (isAbort) throw new Error(`Request to ${absoluteUrl} was cancelled before a response arrived.`);
+      if (error instanceof TypeError) {
+        throw new Error(`Network failure calling ${absoluteUrl}: ${error.message}`);
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  throw new Error(`The first request to ${absoluteUrl} failed after one retry.`);
+}
 
 class TabErrorBoundary extends Component<{
   tabName: string;
@@ -629,12 +684,12 @@ async function readApiJson<T>(response: Response, requestUrl: string): Promise<T
         detail = (rawDetail as any).msg || JSON.stringify(rawDetail);
       }
       throw new Error(detail
-        ? `API request failed: HTTP ${response.status}: ${detail}`
-        : `API request failed: HTTP ${response.status}`);
+        ? `API request to ${requestUrl} failed: HTTP ${response.status}: ${detail}`
+        : `API request to ${requestUrl} failed: HTTP ${response.status}`);
     }
-    if (bodyEmpty) throw new Error(`API request failed: HTTP ${response.status} (empty response)`);
-    if (isHtml) throw new Error(`API request failed: HTTP ${response.status} (received HTML instead of JSON)`);
-    throw new Error(`API request failed: HTTP ${response.status} (invalid JSON response)`);
+    if (bodyEmpty) throw new Error(`API request to ${requestUrl} failed: HTTP ${response.status} (empty response)`);
+    if (isHtml) throw new Error(`API request to ${requestUrl} failed: HTTP ${response.status} (received HTML instead of JSON)`);
+    throw new Error(`API request to ${requestUrl} failed: HTTP ${response.status} (invalid JSON response)`);
   }
 
   return parsed as T;
@@ -709,10 +764,11 @@ export default function App() {
 
   useEffect(() => { (async () => {
     try {
-      const healthUrl = `${API}/health`;
-      const zonesUrl = `${API}/zones`;
-      const [healthResponse, zonesResponse] = await Promise.all([fetch(healthUrl), fetch(zonesUrl)]);
+      const healthUrl = apiRequestUrl('/health');
+      const zonesUrl = apiRequestUrl('/zones');
+      const healthResponse = await fetchApi(healthUrl, {}, setNotice);
       await readApiJson<{ status: string }>(healthResponse, healthUrl);
+      const zonesResponse = await fetchApi(zonesUrl);
       const data = await readApiJson<Record<string, unknown>>(zonesResponse, zonesUrl);
       setHealth('healthy');
       setZones(Object.entries(data).map(([key, item]) => ({ key, ...(item as object) })));
@@ -735,10 +791,10 @@ export default function App() {
       const targetJoules = (analysisMode === 'project' && projectResult)
         ? (projectResult.total_energy_joules || 100.0)
         : (fileJoules || 100.0);
-      const forecastUrl = `${API}/forecast?zone=${encodeURIComponent(zone)}&energy_joules=${targetJoules}`;
+      const forecastUrl = apiRequestUrl(`/forecast?zone=${encodeURIComponent(zone)}&energy_joules=${targetJoules}`);
       setForecastLoading(true);
       setForecastError(null);
-      fetch(forecastUrl)
+      fetchApi(forecastUrl)
         .then(async response => {
           setForecast(await readApiJson<ForecastResponse>(response, forecastUrl));
           setForecastError(null);
@@ -1130,8 +1186,8 @@ export default function App() {
       form.append('file', fileToSend);
       form.append('zone', zone);
       form.append('use_global_average', String(globalAverage));
-      const requestUrl = `${API}/analyze`;
-      const response = await fetch(requestUrl, { method: 'POST', body: form });
+      const requestUrl = apiRequestUrl('/analyze');
+      const response = await fetchApi(requestUrl, { method: 'POST', body: form });
       const data = await readApiJson<AnalyzeResponse>(response, requestUrl);
       setResult(data);
       setAnalysisMode('file');
@@ -1139,11 +1195,7 @@ export default function App() {
     } catch (err: any) {
       console.error('[Code-Carbon] File analysis failed:', err);
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed')) {
-        setNotice('Cannot connect to the Code-Carbon backend service. Please ensure the API server is running on http://127.0.0.1:8000.');
-      } else {
-        setNotice(msg || 'Analysis could not be completed.');
-      }
+      setNotice(msg || `Analysis request to ${API} could not be completed.`);
     } finally {
       setLoading(false);
     }
@@ -1244,8 +1296,8 @@ export default function App() {
       form.append('file', fileToUpload);
       form.append('zone', zone);
       form.append('use_global_average', String(globalAverage));
-      const requestUrl = `${API}/analyze-project`;
-      const response = await fetch(requestUrl, { method: 'POST', body: form });
+      const requestUrl = apiRequestUrl('/analyze-project');
+      const response = await fetchApi(requestUrl, { method: 'POST', body: form });
       const rawProjectData = await readApiJson<Partial<ProjectAnalyzeResponse>>(response, requestUrl);
       const projectIsOutdated = !isCurrentProjectResponse(rawProjectData);
       const projData = normalizeProjectResponse(rawProjectData);
@@ -1257,11 +1309,7 @@ export default function App() {
     } catch (err: any) {
       console.error('[Code-Carbon] Project analysis failed:', err);
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed')) {
-        setNotice('Cannot connect to the Code-Carbon backend service. Please ensure the API server is running on http://127.0.0.1:8000.');
-      } else {
-        setNotice(msg || 'Project analysis could not be completed.');
-      }
+      setNotice(msg || `Project analysis request to ${API} could not be completed.`);
     } finally {
       setLoading(false);
     }

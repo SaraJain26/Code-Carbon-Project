@@ -117,6 +117,21 @@ ELECTRICITYMAPS_API_KEY=your_electricitymaps_api_token
 ```
 *Note: If no API key is specified, the system automatically runs using MockCarbonIntensityProvider.*
 
+### Local dashboard and backend quick start
+Run these commands in two terminals from the repository root. The dashboard's local Vite proxy forwards `/api` requests to the backend on port 8000.
+
+```powershell
+# Terminal 1: backend
+$env:PYTHONPATH="src"
+uvicorn api.main:app --host 127.0.0.1 --port 8000 --reload
+
+# Terminal 2: dashboard
+cd dashboard
+npm run dev
+```
+
+Open `http://localhost:5173`. Production builds use the Render API URL by default; set `VITE_API_URL` at build time to override it.
+
 ### CLI Operations
 The CLI provides immediate estimation reports. Set python encoding for the subscript symbols on Windows:
 ```powershell
