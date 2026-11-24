@@ -35,6 +35,7 @@ temp_*
 data.txt
 log.txt
 records.txt
+tests/fixtures/flask_src/
 
 # Virtual Environments
 .venv/
