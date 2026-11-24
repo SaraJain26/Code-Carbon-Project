@@ -499,6 +499,7 @@ const rawApiUrl = (import.meta.env.VITE_API_URL || defaultApiUrl).trim().replace
 const API = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl}/api`;
 const apiRequestUrl = (path: string) => new URL(`${API}${path}`, window.location.href).toString();
 const API_REQUEST_TIMEOUT_MS = 70_000;
+const API_ANALYSIS_TIMEOUT_MS = 600_000;
 const SERVER_WAKEUP_MESSAGE = 'Waking up the server, this can take up to a minute.';
 let initialApiRequestStarted = false;
 
@@ -506,6 +507,7 @@ async function fetchApi(
   requestUrl: string,
   options: RequestInit = {},
   setRequestNotice?: (message: string | null) => void,
+  timeoutMs = API_REQUEST_TIMEOUT_MS,
 ): Promise<Response> {
   const absoluteUrl = new URL(requestUrl, window.location.href).toString();
   const isInitialRequest = !initialApiRequestStarted;
@@ -520,7 +522,7 @@ async function fetchApi(
     const timeout = window.setTimeout(() => {
       timedOut = true;
       controller.abort();
-    }, API_REQUEST_TIMEOUT_MS);
+    }, timeoutMs);
 
     try {
       const response = await fetch(absoluteUrl, { ...options, signal: controller.signal });
@@ -535,7 +537,7 @@ async function fetchApi(
       const retryable = timedOut || isAbort || error instanceof TypeError;
       if (isInitialRequest && attempt === 0 && retryable) continue;
       if (timedOut) {
-        throw new Error(`Request to ${absoluteUrl} timed out after ${API_REQUEST_TIMEOUT_MS / 1000} seconds.`);
+        throw new Error(`Request to ${absoluteUrl} timed out after ${timeoutMs / 1000} seconds.`);
       }
       if (isAbort) throw new Error(`Request to ${absoluteUrl} was cancelled before a response arrived.`);
       if (error instanceof TypeError) {
@@ -1187,7 +1189,7 @@ export default function App() {
       form.append('zone', zone);
       form.append('use_global_average', String(globalAverage));
       const requestUrl = apiRequestUrl('/analyze');
-      const response = await fetchApi(requestUrl, { method: 'POST', body: form });
+      const response = await fetchApi(requestUrl, { method: 'POST', body: form }, undefined, API_ANALYSIS_TIMEOUT_MS);
       const data = await readApiJson<AnalyzeResponse>(response, requestUrl);
       setResult(data);
       setAnalysisMode('file');
@@ -1297,7 +1299,7 @@ export default function App() {
       form.append('zone', zone);
       form.append('use_global_average', String(globalAverage));
       const requestUrl = apiRequestUrl('/analyze-project');
-      const response = await fetchApi(requestUrl, { method: 'POST', body: form });
+      const response = await fetchApi(requestUrl, { method: 'POST', body: form }, undefined, API_ANALYSIS_TIMEOUT_MS);
       const rawProjectData = await readApiJson<Partial<ProjectAnalyzeResponse>>(response, requestUrl);
       const projectIsOutdated = !isCurrentProjectResponse(rawProjectData);
       const projData = normalizeProjectResponse(rawProjectData);
